@@ -199,11 +199,11 @@
                             </div>
                         </div>
                         <nav className="flex flex-wrap gap-2 justify-center">
-                            <button onClick={() => setView('dashboard')} className={`btn-galactic ${view==='dashboard'?'bg-white text-black shadow-[0_0_20px_white/30]':'border-white/10 text-slate-500'}`}><i data-lucide="bar-chart-3" className="w-3 h-3"></i> Dashboard</button>
                             <button onClick={() => setView('despacho')} className={`btn-galactic ${view==='despacho'?'bg-space-purple text-white shadow-[0_0_20px_#7c3aed44]':'border-white/10 text-slate-500'}`}><i data-lucide="zap" className="w-3 h-3"></i> Despachos</button>
                             <button onClick={() => setView('gestion')} className={`btn-galactic ${view==='gestion'?'bg-space-orange text-white shadow-[0_0_20px_#f9731644]':'border-white/10 text-slate-500'}`}><i data-lucide="package" className="w-3 h-3"></i> Inventario</button>
                             <button onClick={() => setView('distribuidores')} className={`btn-galactic ${view==='distribuidores'?'border-white text-white':'border-white/10 text-slate-500'}`}><i data-lucide="users" className="w-3 h-3"></i> Distribuidores</button>
-                                                    </nav>
+                            <button onClick={() => setView('dashboard')} className={`btn-galactic ${view==='dashboard'?'bg-white text-black shadow-[0_0_20px_white/30]':'border-white/10 text-slate-500'}`}><i data-lucide="bar-chart-3" className="w-3 h-3"></i> Dashboard</button>
+                        </nav>
                     </header>
 
                     {view === 'dashboard' ? (
