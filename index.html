@@ -11,14 +11,8 @@
     <!-- React y Dependencias Críticas -->
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    
-    <!-- FIX: Cargamos PropTypes antes de los gráficos -->
     <script src="https://unpkg.com/prop-types@15.8.1/prop-types.js"></script>
-    
-    <!-- Babel para procesamiento JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <!-- ApexCharts -->
@@ -49,6 +43,7 @@
             animation: scan 4s linear infinite;
         }
         @keyframes scan { 0% { transform: translateY(-100%); } 100% { transform: translateY(100%); } }
+        .neon-text-blue { text-shadow: 0 0 10px rgba(0, 243, 255, 0.5); }
         
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: #020205; }
@@ -57,18 +52,20 @@
 </head>
 <body>
     <!-- CAPA DE FONDO: LOGO TRASLÚCIDO -->
-    <div class="fixed inset-0 -z-10 overflow-hidden bg-[#020205]">
+    <div class="fixed inset-0 z-0 overflow-hidden bg-[#020205]">
         <img 
             src="logo.jpg" 
             alt="Fondo Ferco" 
-            class="w-full h-full object-cover opacity-[0.08] scale-110 blur-[1px] brightness-[0.4]" 
+            class="w-full h-full object-cover opacity-[0.12] scale-110 blur-[1px] brightness-[0.5]" 
             onerror="this.style.display='none';" 
         />
-        <div class="absolute inset-0 bg-gradient-to-b from-[#020205]/95 via-transparent to-[#020205]/95"></div>
+        <!-- Overlay de profundidad -->
+        <div class="absolute inset-0 bg-gradient-to-b from-[#020205]/80 via-transparent to-[#020205]/90"></div>
         <div class="scanline"></div>
     </div>
     
-    <div id="root"></div>
+    <!-- El ID root ahora tiene z-index para estar sobre el fondo -->
+    <div id="root" class="relative z-10"></div>
 
     <script type="text/babel" data-type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -105,8 +102,6 @@
             const [searchTerm, setSearchTerm] = useState('');
             const [carrito, setCarrito] = useState([]);
             const [itemActual, setItemActual] = useState({ productoId: '', nombre: '', sku: '', cantidad: '', valorUnitario: '' });
-            
-            // ACTUALIZACIÓN: Incluimos domiciliario en el estado inicial
             const [datosVenta, setDatosVenta] = useState({ 
                 entidad: 'Cliente', 
                 nombreEntidad: '', 
@@ -119,9 +114,8 @@
             });
 
             const [newProduct, setNewProduct] = useState({ sku: '', nombre: '', precio: '', stockInicial: '' });
-            const [newDist, setNewDist] = useState({ nombre: '', contacto: '', telefono: '', categoria: 'Principal' });
+            const [newDist, setNewDist] = useState({ nombre: '', telefono: '' });
 
-            // Lista oficial de domiciliarios
             const staffDomiciliarios = ['Cris', 'Jhon', 'Felipe', 'Cesar', 'Hades'];
 
             useEffect(() => {
@@ -174,7 +168,6 @@
             const totalOperacion = useMemo(() => {
                 const sub = carrito.reduce((s, i) => s + i.subtotal, 0);
                 const d = datosVenta.entidad === 'Cliente' && datosVenta.tipoCliente === 'Preferencial' ? parseFloat(datosVenta.descuento) || 0 : 0;
-                // Sumamos el valor del domicilio si aplica
                 const dom = datosVenta.entregaDomicilio ? (parseFloat(datosVenta.valorDomicilio) || 0) : 0;
                 return Math.max(0, sub - d) + dom;
             }, [carrito, datosVenta]);
@@ -194,21 +187,15 @@
                     });
                     setCarrito([]);
                     setDatosVenta({ 
-                        entidad: 'Cliente', 
-                        nombreEntidad: '', 
-                        tipoCliente: 'Nuevo', 
-                        descuento: 0, 
-                        valorDomicilio: 0, 
-                        estadoTransaccion: 'Pagado',
-                        entregaDomicilio: false,
-                        domiciliarioAsignado: ''
+                        entidad: 'Cliente', nombreEntidad: '', tipoCliente: 'Nuevo', descuento: 0, 
+                        valorDomicilio: 0, estadoTransaccion: 'Pagado', entregaDomicilio: false, domiciliarioAsignado: ''
                     });
                 } catch (err) { alert("Error de Uplink Cloud."); }
             };
 
             if (loading) return (
                 <div className="flex h-screen items-center justify-center bg-[#020205]">
-                    <div className="text-white font-black italic text-2xl animate-pulse tracking-widest uppercase">Conectando con Ferco...</div>
+                    <div className="text-white font-black italic text-2xl animate-pulse tracking-widest uppercase">Ferco Hub Sincronizando...</div>
                 </div>
             );
 
@@ -219,13 +206,13 @@
                             <img src="logo.jpg" alt="Logo" className="w-24 md:w-36 h-auto rounded-3xl shadow-[0_0_30px_rgba(124,58,237,0.3)] border border-white/10" onError={(e) => e.target.style.display='none'} />
                             <div>
                                 <h1 className="text-4xl font-black italic tracking-tighter text-white uppercase">Ferco <span className="text-space-orange">Farma</span></h1>
-                                <p className="text-[9px] uppercase tracking-[0.4em] font-black text-space-purple mt-1">PRODUCTOS CERTIFICADOS POR LA NASA</p>
+                                <p className="text-[9px] uppercase tracking-[0.4em] font-black text-space-purple mt-1">SISTEMA LOGÍSTICO CERTIFICADO NASA</p>
                             </div>
                         </div>
                         <nav className="flex flex-wrap gap-2 justify-center">
-                            <button onClick={() => setView('despacho')} className={`btn-galactic ${view==='despacho'?'bg-space-purple text-white border-white/20 shadow-[0_0_20px_#7c3aed44]':'border-white/10 text-slate-500'}`}><i data-lucide="zap" className="w-3 h-3"></i> Despachos</button>
-                            <button onClick={() => setView('gestion')} className={`btn-galactic ${view==='gestion'?'bg-space-orange text-white border-white/20 shadow-[0_0_20px_#f9731644]':'border-white/10 text-slate-500'}`}><i data-lucide="package" className="w-3 h-3"></i> Inventario</button>
-                            <button onClick={() => setView('distribuidores')} className={`btn-galactic ${view==='distribuidores'?'border-white text-white':'border-white/10 text-slate-500'}`}><i data-lucide="users" className="w-3 h-3"></i> Distribuidores</button>
+                            <button onClick={() => setView('despacho')} className={`btn-galactic ${view==='despacho'?'bg-space-purple text-white shadow-[0_0_20px_#7c3aed44]':'border-white/10 text-slate-500'}`}><i data-lucide="zap" className="w-3 h-3"></i> Despachos</button>
+                            <button onClick={() => setView('gestion')} className={`btn-galactic ${view==='gestion'?'bg-space-orange text-white shadow-[0_0_20px_#f9731644]':'border-white/10 text-slate-500'}`}><i data-lucide="package" className="w-3 h-3"></i> Inventario</button>
+                            <button onClick={() => setView('distribuidores')} className={`btn-galactic ${view==='distribuidores'?'border-white text-white':'border-white/10 text-slate-500'}`}><i data-lucide="users" className="w-3 h-3"></i> Aliados</button>
                             <button onClick={() => setView('dashboard')} className={`btn-galactic ${view==='dashboard'?'bg-white text-black shadow-[0_0_20px_white/30]':'border-white/10 text-slate-500'}`}><i data-lucide="bar-chart-3" className="w-3 h-3"></i> Dashboard</button>
                         </nav>
                     </header>
@@ -238,26 +225,26 @@
                                     <p className="text-3xl font-black italic text-[#39ff14] text-center">${metrics.cli.toLocaleString()}</p>
                                 </div>
                                 <div className="cyber-panel p-6 border-l-4 border-l-space-purple flex flex-col justify-between h-32">
-                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Cartera Distribuidores</p>
+                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Cartera Aliados</p>
                                     <p className="text-3xl font-black italic text-space-purple text-center">${metrics.dist.toLocaleString()}</p>
                                 </div>
                                 <div className="cyber-panel p-6 border-l-4 border-l-space-orange flex flex-col justify-between h-32">
-                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Info Proveedores</p>
+                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Balance Proveedores</p>
                                     <p className="text-3xl font-black italic text-space-orange text-center">${metrics.prov.toLocaleString()}</p>
                                 </div>
                                 <div className="cyber-panel p-6 border-l-4 border-l-red-600 flex flex-col justify-between h-32">
-                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Stock Críticos</p>
+                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Alerta Críticos</p>
                                     <p className="text-3xl font-black italic text-red-600 text-center">{metrics.criticos}</p>
                                 </div>
                             </div>
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                 <div className="cyber-panel p-8">
-                                    <h3 className="text-sm font-black italic uppercase mb-8 flex items-center gap-2"><i data-lucide="pie-chart" className="text-space-purple"></i> Distribución Operativa</h3>
+                                    <h3 className="text-sm font-black italic uppercase mb-8 flex items-center gap-2"><i data-lucide="pie-chart" className="text-space-purple"></i> Flujo Operativo</h3>
                                     <div className="min-h-[350px] flex items-center justify-center">
                                         {ReactApexChart ? (
                                             <ReactApexChart 
                                                 options={{
-                                                    labels: ['Clientes', 'Distribuidores', 'Proveedores'],
+                                                    labels: ['Clientes', 'Aliados', 'Proveedores'],
                                                     colors: ['#39ff14', '#7c3aed', '#f97316'],
                                                     theme: { mode: 'dark' },
                                                     chart: { background: 'transparent' },
@@ -271,9 +258,9 @@
                                     </div>
                                 </div>
                                 <div className="cyber-panel p-8 flex flex-col justify-center items-center text-center">
-                                    <h3 className="text-sm font-black italic uppercase mb-10 flex items-center gap-2"><i data-lucide="trending-up" className="text-space-orange"></i> Valor de Activos</h3>
-                                    <p className="text-[10px] uppercase font-bold opacity-30 tracking-[0.3em] mb-2">Valor de Inventario</p>
-                                    <p className="text-6xl font-black italic text-white">${metrics.valorTotalBodega.toLocaleString()}</p>
+                                    <h3 className="text-sm font-black italic uppercase mb-10 flex items-center gap-2"><i data-lucide="trending-up" className="text-space-orange"></i> Valorización de Activos</h3>
+                                    <p className="text-[10px] uppercase font-bold opacity-30 tracking-[0.3em] mb-2">Bodega Valorizada</p>
+                                    <p className="text-6xl font-black italic text-white neon-text-blue">${metrics.valorTotalBodega.toLocaleString()}</p>
                                     <div className="w-full bg-white/5 h-2 rounded-full mt-10 overflow-hidden">
                                         <div className="h-full bg-gradient-to-r from-space-purple to-space-orange" style={{ width: '85%' }}></div>
                                     </div>
@@ -286,7 +273,7 @@
                                 <div className="cyber-panel p-8 space-y-6">
                                     <div className="flex p-1 bg-black/40 rounded-xl border border-white/10">
                                         {['Cliente', 'Distribuidor', 'Proveedor'].map(ent => (
-                                            <button key={ent} onClick={() => setDatosVenta({...datosVenta, entidad: ent})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase transition-all ${datosVenta.entidad === ent ? (ent==='Proveedor'?'bg-space-purple text-white':ent==='Distribuidor'?'bg-[#39ff14] text-black':'bg-white text-black') : 'text-slate-600'}`}>{ent}</button>
+                                            <button key={ent} onClick={() => setDatosVenta({...datosVenta, entidad: ent, entregaDomicilio: false})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase transition-all ${datosVenta.entidad === ent ? (ent==='Proveedor'?'bg-space-purple text-white':ent==='Distribuidor'?'bg-[#39ff14] text-black':'bg-white text-black') : 'text-slate-600'}`}>{ent}</button>
                                         ))}
                                     </div>
 
@@ -303,19 +290,19 @@
                                             <input type="number" value={itemActual.cantidad} onChange={e=>setItemActual({...itemActual, cantidad:e.target.value})} placeholder="Cant." className="bg-black/50 p-4 rounded-2xl text-xs outline-none border border-white/5 font-bold" />
                                             <input type="number" value={itemActual.valorUnitario} onChange={e=>setItemActual({...itemActual, valorUnitario:e.target.value})} placeholder="$ Valor" className="bg-black/50 p-4 rounded-2xl text-xs text-[#39ff14] outline-none border border-white/5 font-black" />
                                         </div>
-                                        <button onClick={()=>{ if(!itemActual.productoId || !itemActual.cantidad) return; setCarrito([...carrito, {...itemActual, idT:Date.now(), subtotal:parseFloat(itemActual.cantidad)*parseFloat(itemActual.valorUnitario)}]); setItemActual({productoId:'',nombre:'',sku:'',cantidad:'',valorUnitario:''}); setSearchTerm(''); }} className="w-full py-4 bg-space-purple/10 text-space-purple border border-space-purple/30 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-space-purple hover:text-white">Añadir Producto</button>
+                                        <button onClick={()=>{ if(!itemActual.productoId || !itemActual.cantidad) return; setCarrito([...carrito, {...itemActual, idT:Date.now(), subtotal:parseFloat(itemActual.cantidad)*parseFloat(itemActual.valorUnitario)}]); setItemActual({productoId:'',nombre:'',sku:'',cantidad:'',valorUnitario:''}); setSearchTerm(''); }} className="w-full py-4 bg-space-purple/10 text-space-purple border border-space-purple/30 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-space-purple hover:text-white">+ Añadir al Carrito</button>
                                     </div>
 
-                                    {/* MÓDULO DOMICILIARIOS (SOLO PARA CLIENTE) */}
+                                    {/* SECCIÓN DE DOMICILIOS SOLICITADA */}
                                     {datosVenta.entidad === 'Cliente' && (
                                         <div className="space-y-4 pt-4 border-t border-white/5">
                                             <div className="flex justify-between items-center">
-                                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2 italic">
-                                                    <i data-lucide="bike" className="w-3 h-3 text-[#39ff14]"></i> Agregar Domicilio?
+                                                <label className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-2">
+                                                    <i data-lucide="bike" className="w-4 h-4 text-[#39ff14]"></i> Gestionar Domicilio?
                                                 </label>
                                                 <button 
                                                     onClick={() => setDatosVenta({...datosVenta, entregaDomicilio: !datosVenta.entregaDomicilio})}
-                                                    className={`w-12 h-6 rounded-full transition-all relative ${datosVenta.entregaDomicilio ? 'bg-[#39ff14]' : 'bg-slate-800'}`}
+                                                    className={`w-12 h-6 rounded-full relative transition-colors ${datosVenta.entregaDomicilio ? 'bg-[#39ff14]' : 'bg-slate-800'}`}
                                                 >
                                                     <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${datosVenta.entregaDomicilio ? 'right-1' : 'left-1'}`}></div>
                                                 </button>
@@ -323,12 +310,13 @@
 
                                             {datosVenta.entregaDomicilio && (
                                                 <div className="space-y-4 animate-in slide-in-from-top-4 duration-300">
-                                                    <div className="grid grid-cols-2 gap-2">
+                                                    <label className="text-[9px] font-black uppercase text-space-orange italic ml-1">Seleccionar Domiciliario:</label>
+                                                    <div className="grid grid-cols-3 gap-2">
                                                         {staffDomiciliarios.map(name => (
                                                             <button 
                                                                 key={name}
                                                                 onClick={() => setDatosVenta({...datosVenta, domiciliarioAsignado: name})}
-                                                                className={`py-2 rounded-xl text-[9px] font-black uppercase border transition-all ${datosVenta.domiciliarioAsignado === name ? 'bg-space-orange border-space-orange text-white' : 'border-white/10 text-slate-500'}`}
+                                                                className={`py-2 rounded-xl text-[9px] font-black uppercase border transition-all ${datosVenta.domiciliarioAsignado === name ? 'bg-space-orange border-space-orange text-white' : 'border-white/10 text-slate-500 hover:border-[#39ff14]/50'}`}
                                                             >
                                                                 {name}
                                                             </button>
@@ -338,8 +326,8 @@
                                                         type="number" 
                                                         value={datosVenta.valorDomicilio} 
                                                         onChange={e=>setDatosVenta({...datosVenta, valorDomicilio: e.target.value})} 
-                                                        placeholder="Costo de Envío $" 
-                                                        className="w-full p-3 bg-black/50 border border-[#39ff14]/30 rounded-xl text-xs outline-none text-[#39ff14] font-black"
+                                                        placeholder="Costo Domicilio $" 
+                                                        className="w-full p-3 bg-black/50 border border-[#39ff14]/20 rounded-xl text-xs outline-none text-[#39ff14] font-black"
                                                     />
                                                 </div>
                                             )}
@@ -347,28 +335,28 @@
                                     )}
 
                                     <form onSubmit={ejecutarConfirmacion} className="space-y-5">
-                                        <input type="text" value={datosVenta.nombreEntidad} onChange={e=>setDatosVenta({...datosVenta, nombreEntidad:e.target.value})} placeholder={`Identificación de ${datosVenta.entidad}`} className="w-full p-4 bg-black/50 rounded-2xl text-xs outline-none border border-white/5 focus:border-space-orange" required />
-                                        <div className="bg-black/80 p-6 rounded-[2.5rem] border-2 border-space-purple/30 flex justify-between items-center shadow-inner"><span className="text-[10px] font-black uppercase opacity-40 italic">Total:</span><span className="text-3xl font-black text-[#39ff14]">${totalOperacion.toLocaleString()}</span></div>
-                                        <button type="submit" disabled={carrito.length===0} className={`w-full text-black font-black py-5 rounded-2xl italic uppercase tracking-tighter shadow-2xl transition-all disabled:opacity-20 ${datosVenta.entidad==='Proveedor' ? 'bg-space-purple text-white' : 'bg-gradient-to-br from-space-purple to-space-orange'}`}>Confirmar Despacho</button>
+                                        <input type="text" value={datosVenta.nombreEntidad} onChange={e=>setDatosVenta({...datosVenta, nombreEntidad:e.target.value})} placeholder={`Nombre de ${datosVenta.entidad}`} className="w-full p-4 bg-black/50 rounded-2xl text-xs outline-none border border-white/5 focus:border-space-orange" required />
+                                        <div className="bg-black/80 p-6 rounded-[2.5rem] border-2 border-space-purple/30 flex justify-between items-center shadow-inner"><span className="text-[10px] font-black uppercase opacity-40 italic">Balance:</span><span className="text-3xl font-black text-[#39ff14]">${totalOperacion.toLocaleString()}</span></div>
+                                        <button type="submit" disabled={carrito.length===0} className={`w-full text-black font-black py-5 rounded-2xl italic uppercase tracking-tighter shadow-2xl transition-all disabled:opacity-20 ${datosVenta.entidad==='Proveedor' ? 'bg-space-purple text-white' : 'bg-gradient-to-br from-space-purple to-space-orange'}`}>Confirmar en Cloud</button>
                                     </form>
                                 </div>
                             </div>
                             <div className="lg:col-span-7 xl:col-span-8">
-                                <div className="cyber-panel overflow-hidden border-white/5">
-                                    <div className="p-6 border-b border-white/5 bg-white/5 font-black uppercase italic text-[10px] text-white flex items-center justify-between"><span>Operaciones</span><div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div></div>
-                                    <div className="overflow-x-auto"><table className="w-full text-left text-[10px]"><thead className="bg-black/80 text-slate-500 uppercase font-black tracking-widest border-b border-white/5"><tr><th className="p-6">Nodo</th><th className="p-6">Sujeto</th><th className="p-6 text-center">Entrega</th><th className="p-6 text-center">Monto</th><th className="p-6 text-center">Estado</th><th className="p-6 text-right">Borrar</th></tr></thead>
+                                <div className="cyber-panel overflow-hidden border-white/5 h-full">
+                                    <div className="p-6 border-b border-white/5 bg-white/5 font-black uppercase italic text-[10px] text-white flex items-center justify-between"><span>Transacciones en Vivo</span><div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div></div>
+                                    <div className="overflow-x-auto"><table className="w-full text-left text-[10px]"><thead className="bg-black/80 text-slate-500 uppercase font-black tracking-widest border-b border-white/5"><tr><th className="p-6">Nodo</th><th className="p-6">Sujeto</th><th className="p-6 text-center">Entrega</th><th className="p-6 text-center">Total</th><th className="p-6 text-center">Estado</th><th className="p-6 text-right">Anular</th></tr></thead>
                                         <tbody className="divide-y divide-white/5">{ventas.map(v => (
                                             <tr key={v.id} className="hover:bg-white/5 transition-colors border-l-4 border-l-transparent hover:border-l-space-orange">
-                                                <td className="p-6 font-black uppercase text-[9px]"><span className="opacity-40">{v.entidad}</span></td>
+                                                <td className="p-6 uppercase text-[9px] opacity-40">{v.entidad}</td>
                                                 <td className="p-6 font-black uppercase text-white truncate max-w-[120px]">{v.nombreEntidad}</td>
                                                 <td className="p-6 text-center">
                                                     {v.entregaDomicilio ? (
                                                         <span className="text-[#39ff14] font-black italic flex items-center justify-center gap-1"><i data-lucide="truck" className="w-3 h-3"></i> {v.domiciliarioAsignado}</span>
-                                                    ) : <span className="opacity-20">Mostrador</span>}
+                                                    ) : <span className="opacity-20">Local</span>}
                                                 </td>
                                                 <td className="p-6 text-center font-black text-[#39ff14] italic text-xs">${(parseFloat(v.totalVenta) || 0).toLocaleString()}</td>
                                                 <td className="p-6 text-center"><span className={`px-4 py-1.5 rounded-xl border text-[8px] font-black uppercase ${v.estado === 'Pagado' ? 'text-[#39ff14] border-[#39ff14]/30' : 'text-space-orange border-space-orange/30'}`}>{v.estado}</span></td>
-                                                <td className="p-6 text-right"><button onClick={async ()=>{ if(confirm('¿Anular?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', v.id)); }} className="text-slate-800 hover:text-red-500 transition-colors"><i data-lucide="trash-2" className="w-4 h-4"></i></button></td>
+                                                <td className="p-6 text-right"><button onClick={async ()=>{ if(confirm('¿Anular registro?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', v.id)); }} className="text-slate-700 hover:text-red-500 transition-colors"><i data-lucide="trash-2" className="w-4 h-4"></i></button></td>
                                             </tr>))}</tbody>
                                     </table></div>
                                 </div>
@@ -377,19 +365,19 @@
                     ) : view === 'gestion' ? (
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-500">
                             <div className="lg:col-span-4 cyber-panel p-8 border-space-orange/30">
-                                <h2 className="text-xl font-black mb-8 italic uppercase text-white border-l-4 border-space-purple pl-4">Ingresar SKU</h2>
+                                <h2 className="text-xl font-black mb-8 italic uppercase text-white border-l-4 border-space-purple pl-4">Vincular SKU</h2>
                                 <form onSubmit={async (e)=>{ e.preventDefault(); await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), { sku: newProduct.sku, nombre: newProduct.nombre, precio: parseFloat(newProduct.precio) || 0, stockInicial: parseInt(newProduct.stockInicial) || 0 }); setNewProduct({sku:'',nombre:'',precio:'',stockInicial:''}); }} className="space-y-5">
                                     <input value={newProduct.sku} onChange={e=>setNewProduct({...newProduct, sku:e.target.value})} placeholder="SKU NASA" className="w-full p-4 bg-black/50 rounded-2xl text-xs outline-none border border-white/5 focus:border-space-purple text-white font-bold uppercase" required />
                                     <input value={newProduct.nombre} onChange={e=>setNewProduct({...newProduct, nombre:e.target.value})} placeholder="Nombre Comercial" className="w-full p-4 bg-black/50 rounded-2xl text-xs outline-none border border-white/5 focus:border-space-purple text-white font-bold" required />
                                     <div className="grid grid-cols-2 gap-4">
                                         <input type="number" value={newProduct.precio} onChange={e=>setNewProduct({...newProduct, precio:e.target.value})} placeholder="Base $" className="bg-black/50 p-4 rounded-2xl text-xs outline-none border border-white/5" required />
-                                        <input type="number" value={newProduct.stockInicial} onChange={e=>setNewProduct({...newProduct, stockInicial:e.target.value})} placeholder="Initial Stock" className="bg-black/50 p-4 rounded-2xl text-xs outline-none border border-white/5" required />
+                                        <input type="number" value={newProduct.stockInicial} onChange={e=>setNewProduct({...newProduct, stockInicial:e.target.value})} placeholder="Stock Inicial" className="bg-black/50 p-4 rounded-2xl text-xs outline-none border border-white/5" required />
                                     </div>
-                                    <button type="submit" className="w-full bg-space-orange text-white font-black py-5 rounded-2xl uppercase tracking-tighter shadow-2xl transition-all hover:scale-[1.02]">Ingresar</button>
+                                    <button type="submit" className="w-full bg-space-orange text-white font-black py-5 rounded-2xl uppercase tracking-tighter shadow-2xl transition-all hover:scale-[1.02]">+ Inyectar a Nube</button>
                                 </form>
                             </div>
                             <div className="lg:col-span-8 cyber-panel overflow-hidden border-white/5">
-                                <table className="w-full text-left text-xs"><thead className="bg-[#1a1a24] text-space-orange uppercase font-black border-b border-white/5 tracking-widest"><tr><th className="p-6">Master SKU</th><th className="p-6">Nombre</th><th className="p-6 text-center">Stock Actual</th><th className="p-6 text-right">Borrar</th></tr></thead>
+                                <table className="w-full text-left text-xs"><thead className="bg-[#1a1a24] text-space-orange uppercase font-black border-b border-white/5 tracking-widest"><tr><th className="p-6">Master SKU</th><th className="p-6">Producto</th><th className="p-6 text-center">Stock Actual</th><th className="p-6 text-right">Anular</th></tr></thead>
                                     <tbody className="divide-y divide-white/5">{inventarioActual.map(p => (
                                         <tr key={p.id} className="hover:bg-space-purple/5 transition-colors border-l-4 border-l-transparent hover:border-l-space-purple font-black"><td className="p-6 font-mono font-bold text-space-purple uppercase tracking-tighter">{p.sku}</td><td className="p-6 font-bold text-white uppercase italic">{p.nombre}</td><td className={`p-6 text-center font-black ${p.stockActual < 10 ? 'text-red-500 animate-pulse' : 'text-[#39ff14]'}`}>{p.stockActual} UNIDADES</td><td className="p-6 text-right"><button onClick={async ()=>{ if(confirm('¿Eliminar SKU?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', p.id)); }} className="text-slate-800 hover:text-red-500 p-2 transition-transform hover:scale-125"><i data-lucide="trash-2" className="w-5 h-5"></i></button></td></tr>))}</tbody>
                                 </table></div>
@@ -397,17 +385,17 @@
                     ) : (
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-300">
                             <div className="lg:col-span-4 cyber-panel p-8 border-white/20">
-                                <h2 className="text-xl font-black mb-8 italic uppercase text-white border-l-4 border-white pl-4">Nuevo Distribuidor Aliado</h2>
-                                <form onSubmit={async (e)=>{ e.preventDefault(); await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'distribuidores'), {...newDist, timestamp: Date.now()}); setNewDist({nombre:'',contacto:'',telefono:'',categoria:'Principal'}); }} className="space-y-5">
+                                <h2 className="text-xl font-black mb-8 italic uppercase text-white border-l-4 border-white pl-4">Nuevo Aliado</h2>
+                                <form onSubmit={async (e)=>{ e.preventDefault(); await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'distribuidores'), {...newDist, timestamp: Date.now()}); setNewDist({nombre:'',telefono:''}); }} className="space-y-5">
                                     <input value={newDist.nombre} onChange={e=>setNewDist({...newDist, nombre:e.target.value})} placeholder="Nombre Corporativo" className="w-full p-4 bg-black/50 rounded-2xl text-xs outline-none border border-white/5 focus:border-white text-white font-bold" required />
-                                    <input value={newDist.telefono} onChange={e=>setNewDist({...newDist, telefono:e.target.value})} placeholder="Celular" className="w-full p-4 bg-black/50 rounded-2xl text-xs outline-none border border-white/5" />
-                                    <button type="submit" className="w-full bg-white text-black font-black py-5 rounded-2xl uppercase tracking-tighter shadow-2xl hover:scale-[1.02] transition-all">Registrar Distribuidor</button>
+                                    <input value={newDist.telefono} onChange={e=>setNewDist({...newDist, telefono:e.target.value})} placeholder="Uplink Celular" className="w-full p-4 bg-black/50 rounded-2xl text-xs outline-none border border-white/5" />
+                                    <button type="submit" className="w-full bg-white text-black font-black py-5 rounded-2xl uppercase tracking-tighter shadow-2xl hover:scale-[1.02] transition-all">+ Registrar Socio</button>
                                 </form>
                             </div>
                             <div className="lg:col-span-8 cyber-panel overflow-hidden border-white/5">
-                                <table className="w-full text-left text-xs"><thead className="bg-[#1a1a24] text-white uppercase font-black border-b border-white/5 tracking-widest"><tr><th className="p-6">Socio de Negocio</th></th><th className="p-6">Celular</th><th className="p-6 text-right">Borrar</th></tr></thead>
+                                <table className="w-full text-left text-xs"><thead className="bg-[#1a1a24] text-white uppercase font-black border-b border-white/5 tracking-widest"><tr><th className="p-6">Socio de Negocio</th><th className="p-6">Uplink Celular</th><th className="p-6 text-right">Anular</th></tr></thead>
                                     <tbody className="divide-y divide-white/5">{distribuidores.map(d => (
-                                        <tr key={d.id} className="hover:bg-white/10 transition-colors border-l-4 border-l-transparent hover:border-l-white"><td className="p-6 font-bold text-white uppercase italic">{d.nombre}</td><td className="p-6 opacity-70">{d.contacto}</td><td className="p-6 font-mono text-space-purple">{d.telefono}</td><td className="p-6 text-right"><button onClick={async ()=>{ if(confirm('¿Eliminar?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'distribuidores', d.id)); }} className="text-slate-800 hover:text-red-500 p-2"><i data-lucide="trash-2" className="w-4 h-4"></i></button></td></tr>))}</tbody>
+                                        <tr key={d.id} className="hover:bg-white/10 transition-colors border-l-4 border-l-transparent hover:border-l-white"><td className="p-6 font-bold text-white uppercase italic">{d.nombre}</td><td className="p-6 font-mono text-space-purple">{d.telefono}</td><td className="p-6 text-right"><button onClick={async ()=>{ if(confirm('¿Eliminar?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'distribuidores', d.id)); }} className="text-slate-800 hover:text-red-500 p-2"><i data-lucide="trash-2" className="w-4 h-4"></i></button></td></tr>))}</tbody>
                                 </table></div>
                         </div>
                     )}
