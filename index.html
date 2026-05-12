@@ -154,7 +154,7 @@
                 }
             }, [itemActual.sku, productos]);
 
-            // REQUERIMIENTO: Lógica Auto-llenado para Gestión de Inventario
+            // Lógica Auto-llenado para Gestión de Inventario
             useEffect(() => {
                 const term = newProduct.sku.trim().toUpperCase();
                 if (term.length > 1 && !newProduct.id) {
@@ -219,14 +219,14 @@
                                 if (exist) {
                                     await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', exist.id), { 
                                         stockActual: parseFloat(row.Stock || 0), precio: parseFloat(row.Precio || exist.precio), 
-                                        auditTrail: `SYNC_EXCEL_PROV:${origenActual}_DATE:${new Date().toISOString()}`
+                                        auditTrail: `BATCH_SYNC_${new Date().toISOString()}`
                                     });
                                     count++;
                                 }
                             }
                         }
-                        alert(`Misión Éxito: ${count} SKUs actualizados desde ${origenActual}.`);
-                    } catch (err) { alert("Error de Protocolo Excel."); }
+                        alert(`Misión Éxito: ${count} SKUs sincronizados.`);
+                    } catch (err) { alert("Error de Protocolo."); }
                     finally { setIsSyncing(false); e.target.value = null; }
                 };
                 reader.readAsBinaryString(file);
@@ -313,13 +313,32 @@
                                             <button key={ent} onClick={() => { setDatosVenta({...datosVenta, entidad: ent, entregaDomicilio: false}); setPagos([]); }} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${datosVenta.entidad === ent ? 'bg-white text-black' : 'text-slate-600'}`}>{ent}</button>
                                         ))}
                                     </div>
+
+                                    {/* REQUERIMIENTO: SELECCIÓN DE DISTRIBUIDORES REGISTRADOS EN DESPACHO */}
+                                    {datosVenta.entidad === 'Distribuidor' && (
+                                        <div className="p-4 bg-space-purple/5 rounded-2xl border border-space-purple/20 space-y-3 animate-in slide-in-from-top-4 duration-300">
+                                            <p className="text-[9px] font-black uppercase text-space-purple tracking-widest italic">Seleccionar Aliado Registrado:</p>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                {distribuidores.length > 0 ? distribuidores.map(d => (
+                                                    <button 
+                                                        key={d.id} 
+                                                        onClick={() => setDatosVenta({...datosVenta, nombreEntidad: d.nombre})}
+                                                        className={`py-2 rounded-xl text-[8px] font-black border transition-all ${datosVenta.nombreEntidad === d.nombre ? 'bg-space-purple text-white border-space-purple shadow-[0_0_15px_#9333ea]' : 'border-white/5 text-slate-500 hover:border-space-purple/30'}`}
+                                                    >
+                                                        {d.nombre}
+                                                    </button>
+                                                )) : <p className="col-span-2 text-[8px] opacity-30 italic text-center uppercase">Sin aliados registrados</p>}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div className="space-y-4">
                                         <div className="relative">
                                             <input list="mP" value={itemActual.sku} onChange={e=>setItemActual({...itemActual, sku: e.target.value, productoId:''})} placeholder="SKU O NOMBRE PRODUCTO..." className="w-full p-4 bg-black/50 rounded-2xl text-xs border border-white/5 focus:border-space-purple outline-none font-bold uppercase text-white shadow-inner" />
                                             <datalist id="mP">{productos.map(p => <option key={p.id} value={p.sku}>{p.nombre}</option>)}</datalist>
                                         </div>
                                         <div className="grid grid-cols-2 gap-3">
-                                            <input type="number" value={itemActual.cantidad} onChange={e=>setItemActual({...itemActual, cantidad:e.target.value})} placeholder="CANT" className="bg-black/50 p-4 rounded-xl text-xs border border-white/5 font-bold" />
+                                            <input type="number" value={itemActual.cantidad} onChange={e=>setItemActual({...itemActual, cantidad:e.target.value})} placeholder="CANT" className="bg-black/50 p-4 rounded-xl text-xs border border-white/5 font-bold text-white" />
                                             <div className="bg-black/50 p-4 rounded-xl text-xs text-[#39ff14] font-black border border-white/5 flex items-center justify-between"><span className="opacity-30 uppercase text-[8px]">Base:</span><span>${itemActual.valorUnitario}</span></div>
                                         </div>
                                         <button onClick={()=>{ if(!itemActual.productoId || !itemActual.cantidad) return; setCarrito([...carrito, { ...itemActual, idT: Date.now(), subtotal: itemActual.cantidad * itemActual.valorUnitario }]); setItemActual({sku:'', nombre:'', productoId:'', cantidad:'', valorUnitario:0}); }} className="w-full py-4 bg-space-purple/10 text-space-purple border border-space-purple/40 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-space-purple hover:text-white transition-all">+ CARGAR ITEM</button>
@@ -352,7 +371,7 @@
                                     </div>
 
                                     <form onSubmit={confirmVenta} className="space-y-6">
-                                        <input type="text" value={datosVenta.nombreEntidad} onChange={e=>setDatosVenta({...datosVenta, nombreEntidad:e.target.value})} placeholder="IDENTIFICACIÓN / NOMBRE" className="w-full p-4 bg-black/50 rounded-2xl text-xs border border-white/10 font-bold uppercase focus:border-space-orange outline-none" required />
+                                        <input type="text" value={datosVenta.nombreEntidad} onChange={e=>setDatosVenta({...datosVenta, nombreEntidad:e.target.value})} placeholder="IDENTIFICACIÓN / NOMBRE" className="w-full p-4 bg-black/50 rounded-2xl text-xs border border-white/10 font-bold uppercase focus:border-space-orange outline-none text-white" required />
                                         <div className="bg-black/80 p-6 rounded-[2.5rem] border-2 border-space-purple/30 flex justify-between items-center shadow-inner">
                                             <div><p className="text-[8px] font-black uppercase opacity-40 italic">Abonado:</p><p className={`text-sm font-black ${totalAbonado >= totalOp ? 'text-[#39ff14]' : 'text-red-500 animate-pulse'}`}>${totalAbonado.toLocaleString()}</p></div>
                                             <div className="text-right"><p className="text-[9px] font-black uppercase text-space-purple">TOTAL FINAL:</p><p className="text-3xl font-black italic text-white">${totalOp.toLocaleString()}</p></div>
@@ -378,13 +397,12 @@
                                     <h2 className="text-xl font-black mb-8 italic uppercase border-l-4 border-space-purple pl-4">{newProduct.id ? 'Editar Master' : 'Nuevo Master SKU'}</h2>
                                     <form onSubmit={upsertProd} className="space-y-5">
                                         <div className="relative">
-                                            {/* REQUERIMIENTO: LISTA DESPLEGABLE EN SKU DE INVENTARIO */}
                                             <input list="mSkusInv" value={newProduct.sku} onChange={e=>setNewProduct({...newProduct, sku:e.target.value})} placeholder="SKU (AUTO-GEN)" className="w-full p-4 bg-black/50 rounded-2xl text-xs border border-white/5 text-white font-bold uppercase outline-none focus:border-white" />
                                             <datalist id="mSkusInv">
                                                 {productos.map(p => <option key={p.id} value={p.sku}>{p.nombre}</option>)}
                                             </datalist>
                                         </div>
-                                        <input value={newProduct.nombre} onChange={e=>setNewProduct({...newProduct, nombre:e.target.value})} placeholder="NOMBRE COMERCIAL" className="w-full p-4 bg-black/50 rounded-2xl text-xs border border-white/5 font-black uppercase outline-none focus:border-white" required />
+                                        <input value={newProduct.nombre} onChange={e=>setNewProduct({...newProduct, nombre:e.target.value})} placeholder="NOMBRE COMERCIAL" className="w-full p-4 bg-black/50 rounded-2xl text-xs border border-white/5 font-black uppercase outline-none focus:border-white text-white" required />
                                         <div className="grid grid-cols-2 gap-4">
                                             <input type="number" value={newProduct.precio} onChange={e=>setNewProduct({...newProduct, precio:e.target.value})} placeholder="BASE $" className="bg-black/50 p-4 rounded-2xl text-xs font-black border border-white/5 text-white" required />
                                             <input type="number" value={newProduct.stockInicial} onChange={e=>setNewProduct({...newProduct, stockInicial:e.target.value})} placeholder="CANT" className="bg-black/50 p-4 rounded-2xl text-xs font-black border border-white/5 text-white" required />
@@ -408,7 +426,7 @@
                                 }} className="space-y-5">
                                     <input value={newDist.nombre} onChange={e=>setNewDist({...newDist, nombre:e.target.value})} placeholder="NOMBRE CORPORATIVO" className="w-full p-4 bg-black/50 rounded-2xl text-xs font-black uppercase border border-white/10 focus:border-white outline-none text-white" required />
                                     <input value={newDist.telefono} onChange={e=>setNewDist({...newDist, telefono:e.target.value})} placeholder="UPLINK CELULAR" className="w-full p-4 bg-black/50 rounded-2xl text-xs font-black border border-white/10 focus:border-white outline-none text-white" />
-                                    <button type="submit" className="w-full bg-white text-black font-black py-5 rounded-2xl uppercase tracking-widest shadow-2xl hover:scale-105 transition-all">
+                                    <button type="submit" className="w-full bg-white text-black font-black py-5 rounded-2xl uppercase tracking-widest shadow-2xl hover:scale-105 transition-all text-[10px]">
                                         {newDist.id ? 'Actualizar Socio' : '+ Inyectar Aliado'}
                                     </button>
                                 </form>
