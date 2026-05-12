@@ -3,25 +3,24 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ferco Farma | Galactic Intelligence ERP</title>
+    <title>Ferco Farma | Galactic Master ERP</title>
     
     <!-- Motores de Estilo y UI -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
 
-    <!-- React y Dependencias de Datos (Versiones Estables) -->
+    <!-- React y Dependencias de Datos -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/prop-types@15.8.1/prop-types.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Visualización y Excel -->
+    <!-- Motores de Gráficos y Excel -->
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <script src="https://cdn.jsdelivr.net/npm/react-apexcharts@1.4.1/dist/react-apexcharts.iife.min.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 
     <script>
-        // Configuración de Tema para evitar "Caída de Estilos"
         tailwind.config = {
             theme: {
                 extend: {
@@ -36,17 +35,15 @@
     </script>
 
     <style type="text/css">
-        body { background-color: #030308; color: white; margin: 0; font-family: sans-serif; }
-        
-        /* Capas de Profundidad */
-        #bg-nasa { z-index: 0; position: fixed; inset: 0; overflow: hidden; }
+        body { background-color: #030308; color: white; margin: 0; font-family: sans-serif; overflow-x: hidden; }
+        #bg-nasa { z-index: 0; position: fixed; inset: 0; overflow: hidden; pointer-events: none; }
         #root { z-index: 10; position: relative; min-height: 100vh; }
 
         .glass-panel { 
-            background: rgba(15, 15, 25, 0.8);
+            background: rgba(12, 12, 20, 0.85);
             border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 2rem;
-            backdrop-filter: blur(20px);
+            border-radius: 2.5rem;
+            backdrop-filter: blur(25px);
         }
 
         .btn-primary-nasa {
@@ -55,20 +52,20 @@
             color: white;
             font-weight: 900;
             padding: 1.25rem;
-            border-radius: 1rem;
+            border-radius: 1.25rem;
             text-transform: uppercase;
             font-style: italic;
-            border: 2px solid rgba(255, 255, 255, 0.2);
-            box-shadow: 0 0 20px rgba(249, 115, 22, 0.4);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 0 25px rgba(249, 115, 22, 0.4);
             cursor: pointer;
             transition: all 0.3s ease;
         }
-        .btn-primary-nasa:hover { transform: scale(1.02); box-shadow: 0 0 35px rgba(249, 115, 22, 0.6); border-color: white; }
+        .btn-primary-nasa:hover { transform: scale(1.02); box-shadow: 0 0 45px rgba(249, 115, 22, 0.7); border-color: white; }
         .btn-primary-nasa:disabled { opacity: 0.2; grayscale: 1; cursor: not-allowed; }
 
         .scanline {
             position: fixed; inset: 0; pointer-events: none; opacity: 0.03; z-index: 50;
-            background: linear-gradient(to bottom, transparent 0%, #a855f7 50%, transparent 100%);
+            background: linear-gradient(to bottom, transparent 0%, #9333ea 50%, transparent 100%);
             animation: scan 8s linear infinite;
         }
         @keyframes scan { 0% { transform: translateY(-100%); } 100% { transform: translateY(100%); } }
@@ -79,14 +76,12 @@
     </style>
 </head>
 <body>
-    <!-- CONTENEDOR DE FONDO -->
     <div id="bg-nasa">
-        <img src="logo.jpg" alt="Logo" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.1; filter: blur(1px) brightness(0.4);" onerror="this.style.display='none';" />
-        <div style="position: absolute; inset: 0; background: radial-gradient(circle, transparent 20%, #030308 90%);"></div>
+        <img src="logo.jpg" alt="Logo" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.11; filter: blur(1px) brightness(0.4);" onerror="this.style.display='none';" />
+        <div style="position: absolute; inset: 0; background: radial-gradient(circle, transparent 20%, #030308 95%);"></div>
         <div class="scanline"></div>
     </div>
     
-    <!-- CONTENEDOR DE APLICACIÓN -->
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
@@ -108,7 +103,7 @@
         const db = getFirestore(app);
         const appId = "ferco-farma-wms";
 
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect, useMemo, useRef } = React;
         const ReactApexChart = window.ReactApexCharts ? (window.ReactApexCharts.default || window.ReactApexCharts) : null;
 
         const App = () => {
@@ -118,19 +113,23 @@
             const [distribuidores, setDistribuidores] = useState([]);
             const [view, setView] = useState('dashboard');
             const [loading, setLoading] = useState(true);
+            const [isSyncing, setIsSyncing] = useState(false);
+            const fileInputRef = useRef(null);
 
-            // Estados de Formulario
+            // Estados de Despacho
             const [carrito, setCarrito] = useState([]);
             const [pagos, setPagos] = useState([]);
             const [itemActual, setItemActual] = useState({ productoId: '', sku: '', nombre: '', cantidad: '', valorUnitario: 0 });
             const [metodoActual, setMetodoActual] = useState({ metodo: 'Efectivo', monto: '' });
-            const [datosVenta, setDatosVenta] = useState({ 
-                entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, domiciliarioAsignado: '', valorDomicilio: 0 
-            });
+            const [datosVenta, setDatosVenta] = useState({ entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, domiciliarioAsignado: '', valorDomicilio: 0 });
 
-            // Estados de Gestión
+            // Estados Gestión
             const [newProduct, setNewProduct] = useState({ id: null, sku: '', nombre: '', precio: '', stockInicial: '' });
             const [newDist, setNewDist] = useState({ id: null, nombre: '', telefono: '' });
+            const [distOrigen, setDistOrigen] = useState('');
+
+            const staffDomiciliarios = ['Cris', 'Jhon', 'Felipe', 'Cesar', 'Hades'];
+            const mediosPagoBase = ['Efectivo', 'Transferencia', 'Crédito', 'Datáfono'];
 
             useEffect(() => {
                 signInAnonymously(auth);
@@ -144,16 +143,27 @@
                 onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'distribuidores'), (s) => setDistribuidores(s.docs.map(d => ({ id: d.id, ...d.data() }))));
             }, [user]);
 
-            useEffect(() => { if (!loading && window.lucide) window.lucide.createIcons(); }, [loading, view, productos, ventas, carrito, pagos, datosVenta]);
+            useEffect(() => { if (!loading && window.lucide) window.lucide.createIcons(); }, [loading, view, productos, ventas, carrito, isSyncing, datosVenta, pagos, distOrigen]);
 
-            // Lógica Master SKU
+            // Lógica Auto-llenado para Despacho
             useEffect(() => {
                 const term = itemActual.sku.trim().toUpperCase();
                 if (term.length > 1) {
                     const p = productos.find(x => x.sku.toUpperCase() === term);
-                    if (p) setItemActual(prev => ({ ...prev, productoId: p.id, nombre: p.nombre, valorUnitario: p.precio }));
+                    if (p && !itemActual.productoId) setItemActual(prev => ({ ...prev, productoId: p.id, nombre: p.nombre, valorUnitario: p.precio }));
                 }
             }, [itemActual.sku, productos]);
+
+            // REQUERIMIENTO: Lógica Auto-llenado para Gestión de Inventario
+            useEffect(() => {
+                const term = newProduct.sku.trim().toUpperCase();
+                if (term.length > 1 && !newProduct.id) {
+                    const p = productos.find(x => x.sku.toUpperCase() === term);
+                    if (p) {
+                        setNewProduct(prev => ({ ...prev, nombre: p.nombre, precio: p.precio }));
+                    }
+                }
+            }, [newProduct.sku, productos]);
 
             const metrics = useMemo(() => {
                 const cli = ventas.filter(v => v.entidad === 'Cliente').reduce((s,v) => s + (parseFloat(v.totalVenta) || 0), 0);
@@ -165,22 +175,74 @@
 
             const totalOp = useMemo(() => {
                 const sub = carrito.reduce((s, i) => s + (parseFloat(i.cantidad) * parseFloat(i.valorUnitario) || 0), 0);
-                const dom = datosVenta.entregaDomicilio ? (parseFloat(datosVenta.valorDomicilio) || 0) : 0;
+                const dom = (datosVenta.entidad === 'Cliente' && datosVenta.entregaDomicilio) ? (parseFloat(datosVenta.valorDomicilio) || 0) : 0;
                 return sub + dom;
             }, [carrito, datosVenta]);
 
-            const totalPagado = useMemo(() => pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0), [pagos]);
+            const totalAbonado = useMemo(() => pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0), [pagos]);
+
+            const descargarLogExcel = () => {
+                const data = ventas.map(v => ({
+                    ID: v.id, FECHA: v.fecha, HORA: v.hora, CANAL: v.entidad, RESPONSABLE: v.nombreEntidad,
+                    PRODUCTOS: v.items?.map(i => `${i.nombre}(x${i.cantidad})`).join(' | '),
+                    TOTAL: v.totalVenta, PAGOS: v.pagos?.map(p => `${p.metodo}:$${p.monto}`).join(' / '),
+                    HUELLA_INTERNA: v.auditLog || "SISTEMA"
+                }));
+                const ws = XLSX.utils.json_to_sheet(data);
+                const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Ferco_Data");
+                XLSX.writeFile(wb, `LOG_FERCO_ERP_${Date.now()}.xlsx`);
+            };
+
+            const descargarPlantillaInventario = () => {
+                const data = productos.length > 0 ? productos.map(p => ({ SKU: p.sku, Nombre: p.nombre, Precio: p.precio, Stock: p.stockActual })) : [{ SKU: "NASA-001", Nombre: "PRODUCTO", Precio: 1000, Stock: 10 }];
+                const ws = XLSX.utils.json_to_sheet(data);
+                const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "MasterStock");
+                XLSX.writeFile(wb, "Ferco_Plantilla_Inventario.xlsx");
+            };
+
+            const handleExcelUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = async (evt) => {
+                    setIsSyncing(true);
+                    try {
+                        const bstr = evt.target.result;
+                        const wb = XLSX.read(bstr, { type: 'binary' });
+                        const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+                        let count = 0;
+                        const origenActual = distOrigen || "SIN ESPECIFICAR";
+                        for (const row of data) {
+                            const skuE = String(row.SKU || "").trim().toUpperCase();
+                            if (skuE) {
+                                const exist = productos.find(p => p.sku.toUpperCase() === skuE);
+                                if (exist) {
+                                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', exist.id), { 
+                                        stockActual: parseFloat(row.Stock || 0), precio: parseFloat(row.Precio || exist.precio), 
+                                        auditTrail: `SYNC_EXCEL_PROV:${origenActual}_DATE:${new Date().toISOString()}`
+                                    });
+                                    count++;
+                                }
+                            }
+                        }
+                        alert(`Misión Éxito: ${count} SKUs actualizados desde ${origenActual}.`);
+                    } catch (err) { alert("Error de Protocolo Excel."); }
+                    finally { setIsSyncing(false); e.target.value = null; }
+                };
+                reader.readAsBinaryString(file);
+            };
 
             const confirmVenta = async (e) => {
                 e.preventDefault();
-                if (carrito.length === 0 || totalPagado < totalOp) return;
+                if (carrito.length === 0 || totalAbonado < totalOp) return;
                 try {
                     const ahora = new Date();
-                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), {
+                    const transaccion = {
                         ...datosVenta, items: carrito, pagos, totalVenta: totalOp,
                         timestamp: Date.now(), fecha: ahora.toLocaleDateString(), hora: ahora.toLocaleTimeString(),
-                        auditTrail: `OP: ${ahora.toISOString()} | UID: ${user.uid}`
-                    });
+                        auditLog: `UID:${user.uid}_TIME:${ahora.toISOString()}`
+                    };
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), transaccion);
                     for (const it of carrito) {
                         const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'productos', it.productoId);
                         const pData = productos.find(x => x.id === it.productoId);
@@ -188,113 +250,189 @@
                     }
                     setCarrito([]); setPagos([]);
                     setDatosVenta({ entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, domiciliarioAsignado: '', valorDomicilio: 0 });
-                } catch (err) { alert("Error de Sincronización"); }
+                } catch (err) { alert("Error Cloud Link"); }
             };
 
-            const upsertInv = async (e) => {
+            const upsertProd = async (e) => {
                 e.preventDefault();
-                const skuF = newProduct.sku.trim().toUpperCase() || `NASA-${Math.floor(1000 + Math.random() * 8999)}`;
+                const skuF = newProduct.sku.trim().toUpperCase() || `FF-${Math.floor(1000 + Math.random() * 8999)}`;
+                const ahora = new Date();
+                const origenStr = distOrigen ? `PROVEEDOR:${distOrigen}` : "ENTRADA MANUAL";
+                
                 const data = { 
-                    sku: skuF, nombre: newProduct.nombre.toUpperCase(), 
-                    precio: parseFloat(newProduct.precio) || 0, stockActual: parseFloat(newProduct.stockInicial) || 0,
-                    stockInicial: parseFloat(newProduct.stockInicial) || 0, timestamp: Date.now()
+                    sku: skuF, nombre: newProduct.nombre.toUpperCase(), precio: parseFloat(newProduct.precio) || 0, 
+                    stockActual: parseFloat(newProduct.stockInicial) || 0, stockInicial: parseFloat(newProduct.stockInicial) || 0, 
+                    timestamp: Date.now(), auditTrail: `${origenStr}_TIME:${ahora.toISOString()}`
                 };
+
                 if (newProduct.id) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', newProduct.id), data);
                 else {
                     const exist = productos.find(x => x.sku === skuF);
-                    if (exist) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', exist.id), { stockActual: (parseFloat(exist.stockActual) || 0) + (parseFloat(newProduct.stockInicial) || 0) });
+                    if (exist) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', exist.id), { 
+                        stockActual: (parseFloat(exist.stockActual) || 0) + (parseFloat(newProduct.stockInicial) || 0),
+                        auditTrail: `RE-STOCK_${origenStr}_TIME:${ahora.toISOString()}`
+                    });
                     else await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), data);
                 }
                 setNewProduct({ id: null, sku: '', nombre: '', precio: '', stockInicial: '' });
+                setDistOrigen('');
             };
 
-            const getExcel = () => {
-                const ws = XLSX.utils.json_to_sheet(ventas.map(v => ({
-                    ID: v.id, FECHA: v.fecha, HORA: v.hora, TIPO: v.entidad, SUJETO: v.nombreEntidad,
-                    TOTAL: v.totalVenta, ITEMS: v.items?.map(i => `${i.nombre}(x${i.cantidad})`).join(', '),
-                    AUDIT: v.auditTrail
-                })));
-                const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Ferco_Data");
-                XLSX.writeFile(wb, `FERCO_ERP_${Date.now()}.xlsx`);
-            };
-
-            if (loading) return <div className="flex h-screen items-center justify-center bg-[#030308] text-space-purple font-black animate-pulse uppercase tracking-[0.5em]">Nodo Ferco Sincronizando...</div>;
+            if (loading) return <div className="flex h-screen items-center justify-center bg-[#030308] text-space-purple font-black animate-pulse">UPLINK FERCO ACTIVE...</div>;
 
             return (
                 <div className="max-w-7xl mx-auto p-4 md:p-8">
                     <header className="flex flex-col lg:flex-row justify-between items-center mb-10 gap-8 border-b border-white/5 pb-8">
                         <div className="flex items-center gap-6">
-                            <img src="logo.jpg" alt="L" className="w-24 md:w-36 h-auto rounded-3xl border border-white/10 shadow-2xl" />
-                            <div><h1 className="text-4xl font-black italic">FERCO <span className="text-space-orange">WMS</span></h1><p className="text-[9px] uppercase tracking-[0.6em] font-black text-space-purple">LOGÍSTICA CERTIFICADA NASA</p></div>
+                            <img src="logo.jpg" alt="Logo" className="w-24 md:w-36 h-auto rounded-3xl border border-white/10 shadow-2xl" />
+                            <div><h1 className="text-4xl font-black italic">FERCO <span className="text-space-orange">WMS</span></h1><p className="text-[9px] uppercase tracking-[0.6em] font-black text-space-purple mt-1">PRODUCTOS CERTIFICADOS NASA</p></div>
                         </div>
-                        <nav className="flex flex-wrap gap-2">
+                        <nav className="flex flex-wrap gap-2 justify-center">
                             {['dashboard', 'despacho', 'gestion', 'distribuidores'].map(v => (
-                                <button key={v} onClick={() => setView(v)} className={`px-5 py-2 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all border border-white/5 ${view===v?'bg-white text-black':'text-slate-500 hover:bg-white/5'}`}>{v}</button>
+                                <button key={v} onClick={() => setView(v)} className={`px-5 py-2 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all border border-white/5 ${view===v?'bg-white text-black shadow-[0_0_20px_white/40]':'text-slate-500 hover:bg-white/5'}`}>{v.toUpperCase()}</button>
                             ))}
-                            <button onClick={getExcel} className="px-5 py-2 rounded-2xl bg-cyber-green bg-[#39ff14] text-black font-black text-[10px] uppercase border-none hover:scale-105 transition-all"><i data-lucide="download" className="w-3 h-3 inline mr-1"></i> Excel</button>
+                            <button onClick={descargarLogExcel} className="px-5 py-2 rounded-2xl bg-[#39ff14] text-black font-black text-[10px] uppercase border-none hover:scale-105 transition-all flex items-center gap-2"><i data-lucide="download"></i> Log Excel</button>
                         </nav>
                     </header>
 
                     {view === 'dashboard' ? (
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 animate-in fade-in duration-700">
                             {[ { l: 'Ingresos Clientes', v: metrics.cli, c: '#39ff14' }, { l: 'Cartera Aliados', v: metrics.dist, c: '#9333ea' }, { l: 'Info Proveedores', v: metrics.prov, c: '#f97316' }, { l: 'Patrimonio Bodega', v: metrics.valorBodega, c: '#00f3ff' } ].map((m, i) => (
-                                <div key={i} className="glass-panel p-6 border-l-4" style={{borderColor: m.c}}><p className="text-[9px] font-black text-slate-500 uppercase">{m.l}</p><p className="text-2xl font-black italic" style={{color: m.c}}>${(m.v || 0).toLocaleString()}</p></div>
+                                <div key={i} className="glass-panel p-6 border-l-4" style={{borderColor: m.c}}><p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{m.l}</p><p className="text-2xl font-black italic" style={{color: m.c}}>${(m.v || 0).toLocaleString()}</p></div>
                             ))}
                             <div className="md:col-span-4 glass-panel p-10 min-h-[400px] flex items-center justify-center">
-                                {ReactApexChart && <ReactApexChart options={{ labels: ['Clientes', 'Aliados', 'Proveedores'], colors: ['#39ff14', '#9333ea', '#f97316'], theme: { mode: 'dark' }, chart: { background: 'transparent' }, legend: { position: 'bottom', fontWeight: 900 }, stroke: { show: false } }} series={[ventas.filter(v=>v.entidad==='Cliente').length, ventas.filter(v=>v.entidad==='Distribuidor').length, ventas.filter(v=>v.entidad==='Proveedor').length]} type="donut" width="100%" height={350} />}
+                                {ReactApexChart && <ReactApexChart options={{ labels: ['Clientes', 'Aliados', 'Proveedores'], colors: ['#39ff14', '#9333ea', '#f97316'], theme: { mode: 'dark' }, chart: { background: 'transparent' }, legend: { position: 'bottom', fontWeight: 900 }, stroke: { show: false } }} series={[metrics.cli, metrics.dist, metrics.prov]} type="donut" width="100%" height={350} />}
                             </div>
                         </div>
                     ) : view === 'despacho' ? (
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-500">
                             <div className="lg:col-span-5 space-y-6">
-                                <div className="glass-panel p-8 space-y-6">
+                                <div className="glass-panel p-8 space-y-6 border-[#9333ea]/20">
                                     <div className="flex p-1 bg-black/40 rounded-xl border border-white/10">
                                         {['Cliente', 'Distribuidor', 'Proveedor'].map(ent => (
-                                            <button key={ent} onClick={() => setDatosVenta({...datosVenta, entidad: ent})} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${datosVenta.entidad === ent ? 'bg-white text-black' : 'text-slate-600'}`}>{ent}</button>
+                                            <button key={ent} onClick={() => { setDatosVenta({...datosVenta, entidad: ent, entregaDomicilio: false}); setPagos([]); }} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${datosVenta.entidad === ent ? 'bg-white text-black' : 'text-slate-600'}`}>{ent}</button>
                                         ))}
                                     </div>
                                     <div className="space-y-4">
-                                        <input list="mP" value={itemActual.sku} onChange={e=>setItemActual({...itemActual, sku: e.target.value, productoId:''})} placeholder="SKU O BUSCAR..." className="w-full p-4 bg-black/50 rounded-2xl text-xs border border-white/5 focus:border-space-purple outline-none font-bold uppercase" />
-                                        <datalist id="mP">{productos.map(p => <option key={p.id} value={p.sku}>{p.nombre}</option>)}</datalist>
+                                        <div className="relative">
+                                            <input list="mP" value={itemActual.sku} onChange={e=>setItemActual({...itemActual, sku: e.target.value, productoId:''})} placeholder="SKU O NOMBRE PRODUCTO..." className="w-full p-4 bg-black/50 rounded-2xl text-xs border border-white/5 focus:border-space-purple outline-none font-bold uppercase text-white shadow-inner" />
+                                            <datalist id="mP">{productos.map(p => <option key={p.id} value={p.sku}>{p.nombre}</option>)}</datalist>
+                                        </div>
                                         <div className="grid grid-cols-2 gap-3">
                                             <input type="number" value={itemActual.cantidad} onChange={e=>setItemActual({...itemActual, cantidad:e.target.value})} placeholder="CANT" className="bg-black/50 p-4 rounded-xl text-xs border border-white/5 font-bold" />
-                                            <div className="bg-black/50 p-4 rounded-xl text-xs text-[#39ff14] font-black border border-white/5 flex items-center justify-between"><span className="opacity-30">UNIT:</span><span>${itemActual.valorUnitario}</span></div>
+                                            <div className="bg-black/50 p-4 rounded-xl text-xs text-[#39ff14] font-black border border-white/5 flex items-center justify-between"><span className="opacity-30 uppercase text-[8px]">Base:</span><span>${itemActual.valorUnitario}</span></div>
                                         </div>
-                                        <button onClick={()=>{ if(!itemActual.productoId || !itemActual.cantidad) return; setCarrito([...carrito, { ...itemActual, idT: Date.now() }]); setItemActual({sku:'', nombre:'', productoId:'', cantidad:'', valorUnitario:0}); }} className="w-full py-4 bg-space-purple/10 text-space-purple border border-space-purple/40 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-space-purple hover:text-white transition-all">+ CARGAR ITEM</button>
+                                        <button onClick={()=>{ if(!itemActual.productoId || !itemActual.cantidad) return; setCarrito([...carrito, { ...itemActual, idT: Date.now(), subtotal: itemActual.cantidad * itemActual.valorUnitario }]); setItemActual({sku:'', nombre:'', productoId:'', cantidad:'', valorUnitario:0}); }} className="w-full py-4 bg-space-purple/10 text-space-purple border border-space-purple/40 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-space-purple hover:text-white transition-all">+ CARGAR ITEM</button>
                                     </div>
+
                                     {datosVenta.entidad === 'Cliente' && (
                                         <div className="p-4 bg-black/30 rounded-2xl border border-white/5 space-y-4">
                                             <div className="flex justify-between items-center text-[10px] font-black uppercase"><span>¿DOMICILIO?</span><button onClick={()=>setDatosVenta({...datosVenta, entregaDomicilio: !datosVenta.entregaDomicilio})} className={`w-10 h-5 rounded-full relative transition-all ${datosVenta.entregaDomicilio?'bg-space-orange':'bg-slate-800'}`}><div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${datosVenta.entregaDomicilio?'right-1':'left-1'}`}></div></button></div>
-                                            {datosVenta.entregaDomicilio && <div className="space-y-3 animate-in fade-in"><div className="grid grid-cols-5 gap-1">{['Cris', 'Jhon', 'Felipe', 'Cesar', 'Hades'].map(s => <button key={s} onClick={()=>setDatosVenta({...datosVenta, domiciliarioAsignado: s})} className={`py-1.5 rounded text-[8px] border font-black uppercase ${datosVenta.domiciliarioAsignado===s?'bg-space-orange text-white border-space-orange':'border-white/10 text-slate-500'}`}>{s}</button>)}</div><input type="number" value={datosVenta.valorDomicilio} onChange={e=>setDatosVenta({...datosVenta, valorDomicilio:e.target.value})} placeholder="ENVÍO $" className="w-full p-3 bg-black/50 border border-white/5 rounded-xl text-xs text-[#39ff14] font-black" /></div>}
+                                            {datosVenta.entregaDomicilio && <div className="space-y-3 animate-in fade-in"><div className="grid grid-cols-5 gap-1">{staffDomiciliarios.map(s => <button key={s} onClick={()=>setDatosVenta({...datosVenta, domiciliarioAsignado: s})} className={`py-1.5 rounded text-[8px] border font-black uppercase ${datosVenta.domiciliarioAsignado===s?'bg-space-orange text-white border-space-orange':'border-white/10 text-slate-500'}`}>{s}</button>)}</div><input type="number" value={datosVenta.valorDomicilio} onChange={e=>setDatosVenta({...datosVenta, valorDomicilio:e.target.value})} placeholder="ENVÍO $" className="w-full p-3 bg-black/50 border border-white/5 rounded-xl text-xs text-[#39ff14] font-black outline-none" /></div>}
                                         </div>
                                     )}
+
                                     <div className="p-5 bg-black/30 rounded-3xl border border-white/5 space-y-4">
-                                        <div className="flex gap-2"><select value={metodoActual.metodo} onChange={e=>setMetodoActual({...metodoActual, metodo:e.target.value})} className="flex-1 bg-black/50 p-3 rounded-xl text-[10px] outline-none border border-white/5 font-black uppercase text-space-purple">{ (['Efectivo', 'Transferencia', 'Crédito', 'Datáfono', ...(datosVenta.entidad!=='Cliente'?['Cruce']:[])]).map(f => <option key={f} value={f}>{f}</option>) }</select><input type="number" value={metodoActual.monto} onChange={e=>setMetodoActual({...metodoActual, monto:e.target.value})} placeholder="$" className="w-24 bg-black/50 p-3 rounded-xl text-xs font-black text-[#39ff14]" /><button onClick={() => { if(!metodoActual.monto) return; setPagos([...pagos, {...metodoActual, id: Date.now()}]); setMetodoActual({metodo:'Efectivo', monto:''}); }} className="p-3 bg-space-orange/20 text-space-orange rounded-xl"><i data-lucide="plus" className="w-4 h-4"></i></button></div>
-                                        <div className="flex flex-wrap gap-2">{pagos.map(p => <span key={p.id} className="text-[8px] px-2 py-1 rounded bg-white/5 border border-white/10 font-black uppercase flex items-center gap-2">{p.metodo}: ${p.monto} <button onClick={()=>setPagos(pagos.filter(x=>x.id!==p.id))} className="text-red-500">x</button></span>)}</div>
-                                    </div>
-                                    <form onSubmit={confirmVenta} className="space-y-6">
-                                        <input type="text" value={datosVenta.nombreEntidad} onChange={e=>setDatosVenta({...datosVenta, nombreEntidad:e.target.value})} placeholder="IDENTIFICACIÓN RESPONSABLE" className="w-full p-4 bg-black/50 rounded-2xl text-xs border border-white/10 font-bold uppercase focus:border-space-orange outline-none" required />
-                                        <div className="bg-black/80 p-6 rounded-[2.5rem] border-2 border-space-purple/30 flex justify-between items-center shadow-inner">
-                                            <div><p className="text-[8px] font-black uppercase opacity-40">Abonado:</p><p className={`text-sm font-black ${totalPagado >= totalOp ? 'text-[#39ff14]' : 'text-red-500 animate-pulse'}`}>${totalPagado.toLocaleString()}</p></div>
-                                            <div className="text-right"><p className="text-[9px] font-black uppercase text-space-purple">Balance:</p><p className="text-3xl font-black italic text-white">${totalOp.toLocaleString()}</p></div>
+                                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest italic text-center">Medio de Pago</p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {mediosPagoBase.map(m => (
+                                                <button key={m} onClick={()=>setMetodoActual({...metodoActual, metodo: m})} className={`py-2.5 rounded-xl text-[9px] font-black uppercase border transition-all ${metodoActual.metodo === m ? 'bg-space-purple text-white border-space-purple shadow-[0_0_15px_#9333ea]' : 'border-white/5 text-slate-600'}`}>{m}</button>
+                                            ))}
+                                            {datosVenta.entidad !== 'Cliente' && (
+                                                <button onClick={()=>setMetodoActual({...metodoActual, metodo: 'Cruce'})} className={`col-span-2 py-2.5 rounded-xl text-[9px] font-black uppercase border transition-all ${metodoActual.metodo === 'Cruce' ? 'bg-blue-600 text-white border-blue-600 shadow-[0_0_15px_#2563eb]' : 'border-blue-900/30 text-blue-900'}`}>CRUCE DE CUENTAS</button>
+                                            )}
                                         </div>
-                                        <button type="submit" disabled={carrito.length === 0 || totalPagado < totalOp} className="btn-primary-nasa">
-                                            <i data-lucide="zap" className="w-5 h-5 inline mr-1 fill-current"></i> Ejecutar Protocolo NASA
-                                        </button>
+                                        <div className="flex gap-2">
+                                            <input type="number" value={metodoActual.monto} onChange={e=>setMetodoActual({...metodoActual, monto:e.target.value})} placeholder="MONTO $" className="flex-1 bg-black/60 p-3 rounded-xl text-xs font-black text-[#39ff14] border border-white/5 outline-none" />
+                                            <button onClick={() => { if(!metodoActual.monto) return; setPagos([...pagos, {...metodoActual, id: Date.now()}]); setMetodoActual({metodo:'Efectivo', monto:''}); }} className="p-3 bg-space-orange/20 text-space-orange rounded-xl hover:bg-space-orange hover:text-white transition-all"><i data-lucide="plus"></i></button>
+                                        </div>
+                                        <div className="space-y-1">
+                                            {pagos.map(p => <div key={p.id} className="flex justify-between items-center bg-white/5 px-4 py-1.5 rounded-lg border border-white/5 text-[9px] font-black uppercase"><span>{p.metodo}</span><div className="flex items-center gap-3"><span className="text-[#39ff14] font-black">${parseFloat(p.monto).toLocaleString()}</span><button onClick={()=>setPagos(pagos.filter(x=>x.id!==p.id))} className="text-red-500 hover:scale-125 transition-transform"><i data-lucide="x" className="w-3 h-3"></i></button></div></div>)}
+                                        </div>
+                                    </div>
+
+                                    <form onSubmit={confirmVenta} className="space-y-6">
+                                        <input type="text" value={datosVenta.nombreEntidad} onChange={e=>setDatosVenta({...datosVenta, nombreEntidad:e.target.value})} placeholder="IDENTIFICACIÓN / NOMBRE" className="w-full p-4 bg-black/50 rounded-2xl text-xs border border-white/10 font-bold uppercase focus:border-space-orange outline-none" required />
+                                        <div className="bg-black/80 p-6 rounded-[2.5rem] border-2 border-space-purple/30 flex justify-between items-center shadow-inner">
+                                            <div><p className="text-[8px] font-black uppercase opacity-40 italic">Abonado:</p><p className={`text-sm font-black ${totalAbonado >= totalOp ? 'text-[#39ff14]' : 'text-red-500 animate-pulse'}`}>${totalAbonado.toLocaleString()}</p></div>
+                                            <div className="text-right"><p className="text-[9px] font-black uppercase text-space-purple">TOTAL FINAL:</p><p className="text-3xl font-black italic text-white">${totalOp.toLocaleString()}</p></div>
+                                        </div>
+                                        <button type="submit" disabled={carrito.length === 0 || totalAbonado < totalOp} className="btn-primary-nasa"><i data-lucide="zap" className="w-5 h-5 inline mr-1 fill-current"></i> EJECUTAR PROTOCOLO NASA</button>
                                     </form>
                                 </div>
                             </div>
-                            <div className="lg:col-span-7"><div className="glass-panel overflow-hidden h-full"><div className="p-6 bg-white/5 font-black uppercase text-[10px] flex justify-between border-b border-white/5"><span>Log Operativo</span><div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div></div><div className="overflow-x-auto"><table className="w-full text-left text-[9px]"><thead className="bg-black/50 text-slate-500 uppercase font-black"><tr><th className="p-6">Nodo</th><th className="p-6">Sujeto</th><th className="p-6 text-center">Monto</th><th className="p-6 text-right">Borrar</th></tr></thead><tbody className="divide-y divide-white/5">{ventas.map(v => (<tr key={v.id} className="hover:bg-white/5 transition-colors border-l-4 border-l-transparent hover:border-l-space-orange"><td className="p-6 opacity-40 uppercase font-black text-[8px]">{v.entidad}</td><td className="p-6 font-black uppercase text-white truncate max-w-[120px]">{v.nombreEntidad}</td><td className="p-6 text-center font-black text-[#39ff14] italic text-xs font-mono">${(v.totalVenta || 0).toLocaleString()}</td><td className="p-6 text-right"><button onClick={async ()=>{ if(confirm('¿Anular registro?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', v.id)); }} className="text-slate-800 hover:text-red-500 p-2"><i data-lucide="trash-2" className="w-4 h-4"></i></button></td></tr>))}</tbody></table></div></div></div>
+                            <div className="lg:col-span-7 h-[850px] overflow-hidden"><div className="glass-panel h-full flex flex-col"><div className="p-6 bg-white/5 font-black uppercase text-[10px] flex justify-between border-b border-white/5"><span>Log de Operaciones Real-Time</span><div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div></div><div className="overflow-x-auto flex-1 text-white"><table className="w-full text-left text-[9px]"><thead className="bg-black/50 text-slate-500 uppercase font-black sticky top-0"><tr><th className="p-6 py-4">TimeStamp</th><th className="p-6 py-4">Sujeto</th><th className="p-6 py-4 text-center">Monto</th><th className="p-6 py-4 text-right">Acción</th></tr></thead><tbody className="divide-y divide-white/5">{ventas.map(v => (<tr key={v.id} className="hover:bg-white/5 transition-colors border-l-4 border-l-transparent hover:border-l-space-orange"><td className="p-6 opacity-40 uppercase font-black text-[8px]">{v.hora}<br/>{v.fecha}</td><td className="p-6 font-black uppercase truncate max-w-[120px]">{v.nombreEntidad}</td><td className="p-6 text-center font-black text-[#39ff14] italic text-xs font-mono">${(v.totalVenta || 0).toLocaleString()}</td><td className="p-6 text-right"><button onClick={async ()=>{ if(confirm('¿Anular registro?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', v.id)); }} className="text-slate-800 hover:text-red-500 p-2"><i data-lucide="trash-2" className="w-4 h-4"></i></button></td></tr>))}</tbody></table></div></div></div>
                         </div>
                     ) : view === 'gestion' ? (
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-500">
-                            <div className="lg:col-span-4 glass-panel p-8 border-space-orange/30"><h2 className="text-xl font-black mb-8 italic uppercase border-l-4 border-space-purple pl-4">{newProduct.id ? 'Editar Master' : 'Nuevo SKU'}</h2><form onSubmit={upsertInv} className="space-y-5"><input value={newProduct.sku} onChange={e=>setNewProduct({...newProduct, sku:e.target.value})} placeholder="SKU (AUTO-GEN)" className="w-full p-4 bg-black/50 rounded-2xl text-xs border border-white/5 text-white font-bold uppercase" /><input value={newProduct.nombre} onChange={e=>setNewProduct({...newProduct, nombre:e.target.value})} placeholder="NOMBRE COMERCIAL" className="w-full p-4 bg-black/50 rounded-2xl text-xs border border-white/5 font-black uppercase" required /><div className="grid grid-cols-2 gap-4"><input type="number" value={newProduct.precio} onChange={e=>setNewProduct({...newProduct, precio:e.target.value})} placeholder="BASE $" className="bg-black/50 p-4 rounded-2xl text-xs font-black border border-white/5" required /><input type="number" value={newProduct.stockInicial} onChange={e=>setNewProduct({...newProduct, stockInicial:e.target.value})} placeholder="CANT" className="bg-black/50 p-4 rounded-2xl text-xs font-black border border-white/5" required /></div><button type="submit" className="w-full bg-space-orange text-white font-black py-5 rounded-2xl uppercase shadow-2xl transition-all">{newProduct.id ? 'Actualizar Master' : '+ Inyectar Nube'}</button></form></div>
-                            <div className="lg:col-span-8 glass-panel overflow-hidden border-white/5"><table className="w-full text-left text-xs"><thead className="bg-[#1a1a24] text-space-orange uppercase font-black border-b border-white/10 tracking-widest"><tr><th className="p-6">Master SKU</th><th className="p-6">Nombre</th><th className="p-6 text-center">Stock</th><th className="p-6 text-right">Admin</th></tr></thead><tbody className="divide-y divide-white/10">{productos.map(p => (<tr key={p.id} className="hover:bg-space-purple/5 font-black uppercase"><td className="p-6 font-mono text-space-purple font-black">{p.sku}</td><td className="p-6 italic text-white">{p.nombre}</td><td className={`p-6 text-center font-black ${p.stockActual<10?'text-red-500 animate-pulse':'text-[#39ff14]'}`}>{p.stockActual} Unids</td><td className="p-6 text-right flex justify-end gap-2"><button onClick={()=>setNewProduct({id:p.id, sku:p.sku, nombre:p.nombre, precio:p.precio, stockInicial:p.stockActual})} className="text-blue-500 p-2"><i data-lucide="edit-3" className="w-4 h-4"></i></button><button onClick={async ()=>{ if(confirm('¿Borrar?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', p.id)); }} className="text-red-900 p-2"><i data-lucide="trash-2" className="w-4 h-4"></i></button></td></tr>))}</tbody></table></div>
+                            <div className="lg:col-span-4 space-y-6">
+                                <div className="glass-panel p-8 border-space-orange/30 shadow-[0_0_30px_rgba(249,115,22,0.1)]">
+                                    <h2 className="text-sm font-black mb-6 uppercase text-space-orange italic border-l-4 border-space-purple pl-4">Origen de Mercancía</h2>
+                                    <div className="grid grid-cols-2 gap-2 mb-8">
+                                        <button onClick={()=>setDistOrigen('')} className={`py-2 rounded-xl text-[8px] font-black border transition-all ${distOrigen === '' ? 'bg-white text-black border-white shadow-[0_0_15px_white]' : 'border-white/10 text-slate-500'}`}>MANUAL / INTERNO</button>
+                                        {distribuidores.map(d => (
+                                            <button key={d.id} onClick={()=>setDistOrigen(d.nombre)} className={`py-2 rounded-xl text-[8px] font-black border transition-all ${distOrigen === d.nombre ? 'bg-space-orange text-white border-space-orange shadow-[0_0_15px_#f97316]' : 'border-white/10 text-slate-500'}`}>{d.nombre}</button>
+                                        ))}
+                                    </div>
+
+                                    <h2 className="text-xl font-black mb-8 italic uppercase border-l-4 border-space-purple pl-4">{newProduct.id ? 'Editar Master' : 'Nuevo Master SKU'}</h2>
+                                    <form onSubmit={upsertProd} className="space-y-5">
+                                        <div className="relative">
+                                            {/* REQUERIMIENTO: LISTA DESPLEGABLE EN SKU DE INVENTARIO */}
+                                            <input list="mSkusInv" value={newProduct.sku} onChange={e=>setNewProduct({...newProduct, sku:e.target.value})} placeholder="SKU (AUTO-GEN)" className="w-full p-4 bg-black/50 rounded-2xl text-xs border border-white/5 text-white font-bold uppercase outline-none focus:border-white" />
+                                            <datalist id="mSkusInv">
+                                                {productos.map(p => <option key={p.id} value={p.sku}>{p.nombre}</option>)}
+                                            </datalist>
+                                        </div>
+                                        <input value={newProduct.nombre} onChange={e=>setNewProduct({...newProduct, nombre:e.target.value})} placeholder="NOMBRE COMERCIAL" className="w-full p-4 bg-black/50 rounded-2xl text-xs border border-white/5 font-black uppercase outline-none focus:border-white" required />
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <input type="number" value={newProduct.precio} onChange={e=>setNewProduct({...newProduct, precio:e.target.value})} placeholder="BASE $" className="bg-black/50 p-4 rounded-2xl text-xs font-black border border-white/5 text-white" required />
+                                            <input type="number" value={newProduct.stockInicial} onChange={e=>setNewProduct({...newProduct, stockInicial:e.target.value})} placeholder="CANT" className="bg-black/50 p-4 rounded-2xl text-xs font-black border border-white/5 text-white" required />
+                                        </div>
+                                        <button type="submit" className="w-full bg-space-orange text-white font-black py-5 rounded-2xl uppercase shadow-2xl transition-all">Sincronizar Stock</button>
+                                    </form>
+                                </div>
+                                <div className="glass-panel p-8 border-[#39ff14]/30"><h3 className="text-xs font-black uppercase text-[#39ff14] mb-4 flex items-center gap-2 italic"><i data-lucide="file-spreadsheet"></i> ACTUALIZAR INVENTARIO</h3><input type="file" ref={fileInputRef} onChange={handleExcelUpload} className="hidden" accept=".xlsx, .xls" /><div className="space-y-3"><button onClick={() => fileInputRef.current.click()} disabled={isSyncing} className="w-full py-4 bg-[#39ff14]/10 border-2 border-[#39ff14]/40 rounded-2xl font-black uppercase text-[10px] tracking-widest text-[#39ff14] hover:bg-[#39ff14] hover:text-black transition-all flex items-center justify-center gap-3"><i data-lucide="upload-cloud"></i> {isSyncing ? 'PROCESANDO...' : 'CARGAR ARCHIVO'}</button><button onClick={descargarPlantillaInventario} className="w-full py-3 bg-white/5 border border-white/20 rounded-2xl font-black uppercase text-[9px] tracking-widest text-white hover:bg-white/10 transition-all flex items-center justify-center gap-2"><i data-lucide="file-down" className="w-3 h-3 text-space-orange"></i> DESCARGAR PLANTILLA</button></div></div>
+                            </div>
+                            <div className="lg:col-span-8 glass-panel overflow-hidden h-[850px] flex flex-col"><div className="p-6 bg-white/5 font-black uppercase text-[10px] border-b border-white/5 text-white">Master Inventory Feed</div><div className="overflow-x-auto flex-1 text-white"><table className="w-full text-left text-xs"><thead className="bg-[#1a1a24] text-space-orange uppercase font-black sticky top-0"><tr><th className="p-6">SKU</th><th className="p-6">Nombre</th><th className="p-6 text-center">Stock</th><th className="p-6 text-right">Admin</th></tr></thead><tbody className="divide-y divide-white/10">{productos.map(p => (<tr key={p.id} className="hover:bg-space-purple/5 font-black uppercase transition-colors"><td className="p-6 font-mono text-space-purple font-black">{p.sku}</td><td className="p-6 italic">{p.nombre}</td><td className={`p-6 text-center font-black ${p.stockActual<10?'text-red-500 animate-pulse':'text-[#39ff14]'}`}>{p.stockActual} Unids</td><td className="p-6 text-right flex justify-end gap-2"><button onClick={()=>setNewProduct({id:p.id, sku:p.sku, nombre:p.nombre, precio:p.precio, stockInicial:p.stockActual})} className="text-blue-500 hover:scale-125 transition-transform p-2"><i data-lucide="edit-3"></i></button><button onClick={async ()=>{ if(confirm('¿Borrar?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', p.id)); }} className="text-red-900 hover:scale-125 transition-transform p-2"><i data-lucide="trash-2" className="w-4 h-4"></i></button></td></tr>))}</tbody></table></div></div>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-300">
-                            <div className="lg:col-span-4 glass-panel p-8 border-white/20"><h2 className="text-xl font-black mb-8 italic uppercase border-l-4 border-white pl-4">Nuevo Socio Aliado</h2><form onSubmit={async (e)=>{ e.preventDefault(); if(newDist.id) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'distribuidores', newDist.id), {nombre:newDist.nombre.toUpperCase(), telefono:newDist.telefono}); else await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'distribuidores'), {nombre:newDist.nombre.toUpperCase(), telefono:newDist.telefono, timestamp: Date.now()}); setNewDist({id:null, nombre:'', telefono:''}); }} className="space-y-5"><input value={newDist.nombre} onChange={e=>setNewDist({...newDist, nombre:e.target.value})} placeholder="NOMBRE CORPORATIVO" className="w-full p-4 bg-black/50 rounded-2xl text-xs font-black uppercase border border-white/10 outline-none focus:border-white" required /><input value={newDist.telefono} onChange={e=>setNewDist({...newDist, telefono:e.target.value})} placeholder="UPLINK CELULAR" className="w-full p-4 bg-black/50 rounded-2xl text-xs font-black border border-white/10 outline-none focus:border-white" /><button type="submit" className="w-full bg-white text-black font-black py-5 rounded-2xl uppercase tracking-widest shadow-2xl hover:scale-[1.02] transition-all">{newDist.id ? 'Actualizar' : '+ Registrar Socio'}</button></form></div>
-                            <div className="lg:col-span-8 glass-panel overflow-hidden border-white/5"><table className="w-full text-left text-xs"><thead className="bg-[#1a1a24] text-white uppercase font-black border-b border-white/10 tracking-widest"><tr><th className="p-6">Socio de Negocio</th><th className="p-6">Uplink</th><th className="p-6 text-right">Borrar</th></tr></thead><tbody className="divide-y divide-white/10">{distribuidores.map(d => (<tr key={d.id} className="hover:bg-white/10 font-black uppercase italic"><td className="p-6">{d.nombre}</td><td className="p-6 font-mono text-space-purple font-black">{d.telefono}</td><td className="p-6 text-right flex justify-end gap-2"><button onClick={()=>setNewDist({id:d.id, nombre:d.nombre, telefono:d.telefono})} className="text-blue-500 p-2"><i data-lucide="edit-3" className="w-4 h-4"></i></button><button onClick={async ()=>{ if(confirm('¿Eliminar?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'distribuidores', d.id)); }} className="text-slate-800 hover:text-red-500 p-2"><i data-lucide="trash-2" className="w-4 h-4"></i></button></td></tr>))}</tbody></table></div>
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-500">
+                            <div className="lg:col-span-4 glass-panel p-8 border-white/20">
+                                <h2 className="text-xl font-black mb-8 italic uppercase border-l-4 border-white pl-4 tracking-tighter text-white">{newDist.id ? 'Modificar Aliado' : 'Registrar Socio Aliado'}</h2>
+                                <form onSubmit={async (e)=>{ 
+                                    e.preventDefault(); 
+                                    if(newDist.id) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'distribuidores', newDist.id), {nombre:newDist.nombre.toUpperCase(), telefono:newDist.telefono}); 
+                                    else await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'distribuidores'), {nombre:newDist.nombre.toUpperCase(), telefono:newDist.telefono, timestamp: Date.now()}); 
+                                    setNewDist({id:null, nombre:'', telefono:''}); 
+                                }} className="space-y-5">
+                                    <input value={newDist.nombre} onChange={e=>setNewDist({...newDist, nombre:e.target.value})} placeholder="NOMBRE CORPORATIVO" className="w-full p-4 bg-black/50 rounded-2xl text-xs font-black uppercase border border-white/10 focus:border-white outline-none text-white" required />
+                                    <input value={newDist.telefono} onChange={e=>setNewDist({...newDist, telefono:e.target.value})} placeholder="UPLINK CELULAR" className="w-full p-4 bg-black/50 rounded-2xl text-xs font-black border border-white/10 focus:border-white outline-none text-white" />
+                                    <button type="submit" className="w-full bg-white text-black font-black py-5 rounded-2xl uppercase tracking-widest shadow-2xl hover:scale-105 transition-all">
+                                        {newDist.id ? 'Actualizar Socio' : '+ Inyectar Aliado'}
+                                    </button>
+                                </form>
+                            </div>
+                            <div className="lg:col-span-8 glass-panel overflow-hidden border-white/10 h-[600px] flex flex-col text-white">
+                                <div className="p-6 bg-white/5 font-black uppercase text-[10px] border-b border-white/5">Gremio de Aliados Estratégicos</div>
+                                <div className="overflow-x-auto flex-1">
+                                    <table className="w-full text-left text-xs">
+                                        <thead className="bg-[#1a1a24] text-white uppercase font-black sticky top-0"><tr><th className="p-6">Nombre de Entidad</th><th className="p-6 text-center">Uplink</th><th className="p-6 text-right">Admin</th></tr></thead>
+                                        <tbody className="divide-y divide-white/10">
+                                            {distribuidores.map(d => (
+                                                <tr key={d.id} className="hover:bg-white/10 font-black uppercase italic transition-colors border-l-4 border-l-transparent hover:border-l-white text-white">
+                                                    <td className="p-6">{d.nombre}</td>
+                                                    <td className="p-6 text-center font-mono text-space-purple font-black">{d.telefono}</td>
+                                                    <td className="p-6 text-right flex justify-end gap-2">
+                                                        <button onClick={()=>setNewDist({id:d.id, nombre:d.nombre, telefono:d.telefono})} className="text-blue-500 hover:scale-125 transition-transform p-2"><i data-lucide="edit-3"></i></button>
+                                                        <button onClick={async ()=>{ if(confirm('¿Anular registro?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'distribuidores', d.id)); }} className="text-red-900 hover:scale-125 transition-transform p-2"><i data-lucide="trash-2" className="w-4 h-4"></i></button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>
