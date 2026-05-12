@@ -3,74 +3,96 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ferco Farma | Galactic Intelligence Hub</title>
+    <title>Ferco Farma | Galactic Intelligence ERP</title>
     
-    <!-- Tailwind CSS v4 (Play CDN) -->
+    <!-- Motores de Estilo y UI -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- React y Dependencias Críticas -->
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
 
-    <!-- ApexCharts -->
+    <!-- React y Dependencias de Datos (Versiones Estables) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Visualización y Excel -->
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <script src="https://cdn.jsdelivr.net/npm/react-apexcharts@1.4.1/dist/react-apexcharts.iife.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 
-    <style type="text/tailwindcss">
-        @theme {
-            --color-space-purple: #7c3aed;
-            --color-space-orange: #f97316;
-            --color-space-bg: #020205;
-            --color-space-card: rgba(15, 15, 25, 0.85);
-        }
-        @layer base {
-            body { 
-                @apply bg-[#020205] text-white font-sans selection:bg-[#f97316] overflow-x-hidden; 
+    <script>
+        // Configuración de Tema para evitar "Caída de Estilos"
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'space-purple': '#9333ea',
+                        'space-orange': '#f97316',
+                        'space-bg': '#030308',
+                    }
+                }
             }
         }
-        .cyber-panel { 
-            @apply bg-[rgba(15,15,25,0.75)] border border-white/10 rounded-[2.5rem] backdrop-blur-2xl shadow-2xl; 
+    </script>
+
+    <style type="text/css">
+        body { background-color: #030308; color: white; margin: 0; font-family: sans-serif; }
+        
+        /* Capas de Profundidad */
+        #bg-nasa { z-index: 0; position: fixed; inset: 0; overflow: hidden; }
+        #root { z-index: 10; position: relative; min-height: 100vh; }
+
+        .glass-panel { 
+            background: rgba(15, 15, 25, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 2rem;
+            backdrop-filter: blur(20px);
         }
-        .btn-galactic { 
-            @apply px-5 py-2.5 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all border flex items-center gap-2; 
+
+        .btn-primary-nasa {
+            width: 100%;
+            background: linear-gradient(90deg, #9333ea 0%, #f97316 100%);
+            color: white;
+            font-weight: 900;
+            padding: 1.25rem;
+            border-radius: 1rem;
+            text-transform: uppercase;
+            font-style: italic;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 0 20px rgba(249, 115, 22, 0.4);
+            cursor: pointer;
+            transition: all 0.3s ease;
         }
+        .btn-primary-nasa:hover { transform: scale(1.02); box-shadow: 0 0 35px rgba(249, 115, 22, 0.6); border-color: white; }
+        .btn-primary-nasa:disabled { opacity: 0.2; grayscale: 1; cursor: not-allowed; }
+
         .scanline {
-            @apply fixed inset-0 pointer-events-none opacity-[0.03] z-50;
-            background: linear-gradient(to bottom, transparent 0%, #00f3ff 50%, transparent 100%);
-            animation: scan 4s linear infinite;
+            position: fixed; inset: 0; pointer-events: none; opacity: 0.03; z-index: 50;
+            background: linear-gradient(to bottom, transparent 0%, #a855f7 50%, transparent 100%);
+            animation: scan 8s linear infinite;
         }
         @keyframes scan { 0% { transform: translateY(-100%); } 100% { transform: translateY(100%); } }
-        .neon-text-blue { text-shadow: 0 0 10px rgba(0, 243, 255, 0.5); }
         
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-track { background: #020205; }
-        ::-webkit-scrollbar-thumb { background: #7c3aed44; border-radius: 10px; }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: #030308; }
+        ::-webkit-scrollbar-thumb { background: rgba(147, 51, 234, 0.3); border-radius: 10px; }
     </style>
 </head>
 <body>
-    <!-- CAPA DE FONDO: LOGO TRASLÚCIDO -->
-    <div class="fixed inset-0 z-0 overflow-hidden bg-[#020205]">
-        <img 
-            src="logo.jpg" 
-            alt="Fondo Ferco" 
-            class="w-full h-full object-cover opacity-[0.12] scale-110 blur-[1px] brightness-[0.5]" 
-            onerror="this.style.display='none';" 
-        />
-        <!-- Overlay de profundidad -->
-        <div class="absolute inset-0 bg-gradient-to-b from-[#020205]/80 via-transparent to-[#020205]/90"></div>
+    <!-- CONTENEDOR DE FONDO -->
+    <div id="bg-nasa">
+        <img src="logo.jpg" alt="Logo" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.1; filter: blur(1px) brightness(0.4);" onerror="this.style.display='none';" />
+        <div style="position: absolute; inset: 0; background: radial-gradient(circle, transparent 20%, #030308 90%);"></div>
         <div class="scanline"></div>
     </div>
     
-    <!-- El ID root ahora tiene z-index para estar sobre el fondo -->
-    <div id="root" class="relative z-10"></div>
+    <!-- CONTENEDOR DE APLICACIÓN -->
+    <div id="root"></div>
 
     <script type="text/babel" data-type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, query } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, query, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyB8Ei-GTiqedjsFy09XVujGb94mzkBmVOU",
@@ -87,7 +109,6 @@
         const appId = "ferco-farma-wms";
 
         const { useState, useEffect, useMemo } = React;
-
         const ReactApexChart = window.ReactApexCharts ? (window.ReactApexCharts.default || window.ReactApexCharts) : null;
 
         const App = () => {
@@ -99,304 +120,181 @@
             const [loading, setLoading] = useState(true);
 
             // Estados de Formulario
-            const [searchTerm, setSearchTerm] = useState('');
             const [carrito, setCarrito] = useState([]);
-            const [itemActual, setItemActual] = useState({ productoId: '', nombre: '', sku: '', cantidad: '', valorUnitario: '' });
+            const [pagos, setPagos] = useState([]);
+            const [itemActual, setItemActual] = useState({ productoId: '', sku: '', nombre: '', cantidad: '', valorUnitario: 0 });
+            const [metodoActual, setMetodoActual] = useState({ metodo: 'Efectivo', monto: '' });
             const [datosVenta, setDatosVenta] = useState({ 
-                entidad: 'Cliente', 
-                nombreEntidad: '', 
-                tipoCliente: 'Nuevo', 
-                descuento: 0, 
-                valorDomicilio: 0, 
-                estadoTransaccion: 'Pagado',
-                entregaDomicilio: false,
-                domiciliarioAsignado: ''
+                entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, domiciliarioAsignado: '', valorDomicilio: 0 
             });
 
-            const [newProduct, setNewProduct] = useState({ sku: '', nombre: '', precio: '', stockInicial: '' });
-            const [newDist, setNewDist] = useState({ nombre: '', telefono: '' });
-
-            const staffDomiciliarios = ['Cris', 'Jhon', 'Felipe', 'Cesar', 'Hades'];
+            // Estados de Gestión
+            const [newProduct, setNewProduct] = useState({ id: null, sku: '', nombre: '', precio: '', stockInicial: '' });
+            const [newDist, setNewDist] = useState({ id: null, nombre: '', telefono: '' });
 
             useEffect(() => {
-                const init = async () => {
-                    await signInAnonymously(auth);
-                    onAuthStateChanged(auth, (u) => { 
-                        setUser(u); 
-                        if(u) setLoading(false); 
-                    });
-                };
-                init();
+                signInAnonymously(auth);
+                onAuthStateChanged(auth, (u) => { setUser(u); if(u) setLoading(false); });
             }, []);
 
             useEffect(() => {
                 if (!user) return;
-                const unsubProd = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), (s) => setProductos(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-                const unsubVentas = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), (s) => setVentas(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0))));
-                const unsubDist = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'distribuidores'), (s) => setDistribuidores(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-                return () => { unsubProd(); unsubVentas(); unsubDist(); };
+                onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), (s) => setProductos(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+                onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), (s) => setVentas(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0))));
+                onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'distribuidores'), (s) => setDistribuidores(s.docs.map(d => ({ id: d.id, ...d.data() }))));
             }, [user]);
 
-            useEffect(() => {
-                if (!loading && window.lucide) window.lucide.createIcons();
-            }, [loading, view, productos, ventas, carrito, datosVenta.entidad, datosVenta.entregaDomicilio]);
+            useEffect(() => { if (!loading && window.lucide) window.lucide.createIcons(); }, [loading, view, productos, ventas, carrito, pagos, datosVenta]);
 
-            const inventarioActual = useMemo(() => {
-                return productos.map(p => {
-                    const vendidas = ventas.reduce((acc, v) => {
-                        const items = (v.items || []).filter(i => i.productoId === p.id);
-                        return acc + items.reduce((s, i) => s + (parseFloat(i.cantidad) || 0), 0);
-                    }, 0);
-                    return { ...p, stockActual: (parseFloat(p.stockInicial) || 0) - vendidas };
-                });
-            }, [productos, ventas]);
+            // Lógica Master SKU
+            useEffect(() => {
+                const term = itemActual.sku.trim().toUpperCase();
+                if (term.length > 1) {
+                    const p = productos.find(x => x.sku.toUpperCase() === term);
+                    if (p) setItemActual(prev => ({ ...prev, productoId: p.id, nombre: p.nombre, valorUnitario: p.precio }));
+                }
+            }, [itemActual.sku, productos]);
 
             const metrics = useMemo(() => {
                 const cli = ventas.filter(v => v.entidad === 'Cliente').reduce((s,v) => s + (parseFloat(v.totalVenta) || 0), 0);
                 const dist = ventas.filter(v => v.entidad === 'Distribuidor').reduce((s,v) => s + (parseFloat(v.totalVenta) || 0), 0);
                 const prov = ventas.filter(v => v.entidad === 'Proveedor').reduce((s,v) => s + (parseFloat(v.totalVenta) || 0), 0);
-                const valorTotalBodega = inventarioActual.reduce((s,p) => s + (p.stockActual * (parseFloat(p.precio) || 0)), 0);
-                const criticos = inventarioActual.filter(p => p.stockActual < 10).length;
-                return { cli, dist, prov, valorTotalBodega, criticos };
-            }, [ventas, inventarioActual]);
+                const valorBodega = productos.reduce((s,p) => s + ((parseFloat(p.stockActual) || 0) * (parseFloat(p.precio) || 0)), 0);
+                return { cli, dist, prov, valorBodega };
+            }, [ventas, productos]);
 
-            const filtrados = useMemo(() => {
-                const t = searchTerm.toLowerCase().trim();
-                return t && !itemActual.productoId ? inventarioActual.filter(p => p.nombre?.toLowerCase().includes(t) || p.sku?.toLowerCase().includes(t)) : [];
-            }, [searchTerm, inventarioActual, itemActual.productoId]);
-
-            const totalOperacion = useMemo(() => {
-                const sub = carrito.reduce((s, i) => s + i.subtotal, 0);
-                const d = datosVenta.entidad === 'Cliente' && datosVenta.tipoCliente === 'Preferencial' ? parseFloat(datosVenta.descuento) || 0 : 0;
+            const totalOp = useMemo(() => {
+                const sub = carrito.reduce((s, i) => s + (parseFloat(i.cantidad) * parseFloat(i.valorUnitario) || 0), 0);
                 const dom = datosVenta.entregaDomicilio ? (parseFloat(datosVenta.valorDomicilio) || 0) : 0;
-                return Math.max(0, sub - d) + dom;
+                return sub + dom;
             }, [carrito, datosVenta]);
 
-            const ejecutarConfirmacion = async (e) => {
+            const totalPagado = useMemo(() => pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0), [pagos]);
+
+            const confirmVenta = async (e) => {
                 e.preventDefault();
-                if (carrito.length === 0) return;
+                if (carrito.length === 0 || totalPagado < totalOp) return;
                 try {
+                    const ahora = new Date();
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), {
-                        ...datosVenta,
-                        items: carrito,
-                        totalVenta: totalOperacion,
-                        timestamp: Date.now(),
-                        estado: datosVenta.entidad === 'Proveedor' ? datosVenta.estadoTransaccion : 'Pendiente',
-                        fecha: new Date().toLocaleDateString(),
-                        hora: new Date().toLocaleTimeString()
+                        ...datosVenta, items: carrito, pagos, totalVenta: totalOp,
+                        timestamp: Date.now(), fecha: ahora.toLocaleDateString(), hora: ahora.toLocaleTimeString(),
+                        auditTrail: `OP: ${ahora.toISOString()} | UID: ${user.uid}`
                     });
-                    setCarrito([]);
-                    setDatosVenta({ 
-                        entidad: 'Cliente', nombreEntidad: '', tipoCliente: 'Nuevo', descuento: 0, 
-                        valorDomicilio: 0, estadoTransaccion: 'Pagado', entregaDomicilio: false, domiciliarioAsignado: ''
-                    });
-                } catch (err) { alert("Error de Uplink Cloud."); }
+                    for (const it of carrito) {
+                        const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'productos', it.productoId);
+                        const pData = productos.find(x => x.id === it.productoId);
+                        await updateDoc(pRef, { stockActual: (parseFloat(pData.stockActual) || 0) - parseFloat(it.cantidad) });
+                    }
+                    setCarrito([]); setPagos([]);
+                    setDatosVenta({ entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, domiciliarioAsignado: '', valorDomicilio: 0 });
+                } catch (err) { alert("Error de Sincronización"); }
             };
 
-            if (loading) return (
-                <div className="flex h-screen items-center justify-center bg-[#020205]">
-                    <div className="text-white font-black italic text-2xl animate-pulse tracking-widest uppercase">Ferco Hub Sincronizando...</div>
-                </div>
-            );
+            const upsertInv = async (e) => {
+                e.preventDefault();
+                const skuF = newProduct.sku.trim().toUpperCase() || `NASA-${Math.floor(1000 + Math.random() * 8999)}`;
+                const data = { 
+                    sku: skuF, nombre: newProduct.nombre.toUpperCase(), 
+                    precio: parseFloat(newProduct.precio) || 0, stockActual: parseFloat(newProduct.stockInicial) || 0,
+                    stockInicial: parseFloat(newProduct.stockInicial) || 0, timestamp: Date.now()
+                };
+                if (newProduct.id) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', newProduct.id), data);
+                else {
+                    const exist = productos.find(x => x.sku === skuF);
+                    if (exist) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', exist.id), { stockActual: (parseFloat(exist.stockActual) || 0) + (parseFloat(newProduct.stockInicial) || 0) });
+                    else await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), data);
+                }
+                setNewProduct({ id: null, sku: '', nombre: '', precio: '', stockInicial: '' });
+            };
+
+            const getExcel = () => {
+                const ws = XLSX.utils.json_to_sheet(ventas.map(v => ({
+                    ID: v.id, FECHA: v.fecha, HORA: v.hora, TIPO: v.entidad, SUJETO: v.nombreEntidad,
+                    TOTAL: v.totalVenta, ITEMS: v.items?.map(i => `${i.nombre}(x${i.cantidad})`).join(', '),
+                    AUDIT: v.auditTrail
+                })));
+                const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Ferco_Data");
+                XLSX.writeFile(wb, `FERCO_ERP_${Date.now()}.xlsx`);
+            };
+
+            if (loading) return <div className="flex h-screen items-center justify-center bg-[#030308] text-space-purple font-black animate-pulse uppercase tracking-[0.5em]">Nodo Ferco Sincronizando...</div>;
 
             return (
-                <div className="max-w-7xl mx-auto p-4 md:p-10">
-                    <header className="flex flex-col lg:flex-row justify-between items-center mb-12 gap-8 border-b border-white/5 pb-10">
-                        <div className="flex flex-col md:flex-row items-center gap-6">
-                            <img src="logo.jpg" alt="Logo" className="w-24 md:w-36 h-auto rounded-3xl shadow-[0_0_30px_rgba(124,58,237,0.3)] border border-white/10" onError={(e) => e.target.style.display='none'} />
-                            <div>
-                                <h1 className="text-4xl font-black italic tracking-tighter text-white uppercase">Ferco <span className="text-space-orange">Farma</span></h1>
-                                <p className="text-[9px] uppercase tracking-[0.4em] font-black text-space-purple mt-1">Productos Certificados por la NASA</p>
-                            </div>
+                <div className="max-w-7xl mx-auto p-4 md:p-8">
+                    <header className="flex flex-col lg:flex-row justify-between items-center mb-10 gap-8 border-b border-white/5 pb-8">
+                        <div className="flex items-center gap-6">
+                            <img src="logo.jpg" alt="L" className="w-24 md:w-36 h-auto rounded-3xl border border-white/10 shadow-2xl" />
+                            <div><h1 className="text-4xl font-black italic">FERCO <span className="text-space-orange">WMS</span></h1><p className="text-[9px] uppercase tracking-[0.6em] font-black text-space-purple">LOGÍSTICA CERTIFICADA NASA</p></div>
                         </div>
-                        <nav className="flex flex-wrap gap-2 justify-center">
-                            <button onClick={() => setView('despacho')} className={`btn-galactic ${view==='despacho'?'bg-space-purple text-white shadow-[0_0_20px_#7c3aed44]':'border-white/10 text-slate-500'}`}><i data-lucide="zap" className="w-3 h-3"></i> Despachos</button>
-                            <button onClick={() => setView('gestion')} className={`btn-galactic ${view==='gestion'?'bg-space-orange text-white shadow-[0_0_20px_#f9731644]':'border-white/10 text-slate-500'}`}><i data-lucide="package" className="w-3 h-3"></i> Inventario</button>
-                            <button onClick={() => setView('distribuidores')} className={`btn-galactic ${view==='distribuidores'?'border-white text-white':'border-white/10 text-slate-500'}`}><i data-lucide="users" className="w-3 h-3"></i> Aliados</button>
-                            <button onClick={() => setView('dashboard')} className={`btn-galactic ${view==='dashboard'?'bg-white text-black shadow-[0_0_20px_white/30]':'border-white/10 text-slate-500'}`}><i data-lucide="bar-chart-3" className="w-3 h-3"></i> Dashboard</button>
+                        <nav className="flex flex-wrap gap-2">
+                            {['dashboard', 'despacho', 'gestion', 'distribuidores'].map(v => (
+                                <button key={v} onClick={() => setView(v)} className={`px-5 py-2 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all border border-white/5 ${view===v?'bg-white text-black':'text-slate-500 hover:bg-white/5'}`}>{v}</button>
+                            ))}
+                            <button onClick={getExcel} className="px-5 py-2 rounded-2xl bg-cyber-green bg-[#39ff14] text-black font-black text-[10px] uppercase border-none hover:scale-105 transition-all"><i data-lucide="download" className="w-3 h-3 inline mr-1"></i> Excel</button>
                         </nav>
                     </header>
 
                     {view === 'dashboard' ? (
-                        <div className="space-y-8 animate-in fade-in zoom-in duration-700">
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                                <div className="cyber-panel p-6 border-l-4 border-l-[#39ff14] flex flex-col justify-between h-32">
-                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Ingresos Clientes</p>
-                                    <p className="text-3xl font-black italic text-[#39ff14] text-center">${metrics.cli.toLocaleString()}</p>
-                                </div>
-                                <div className="cyber-panel p-6 border-l-4 border-l-space-purple flex flex-col justify-between h-32">
-                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Cartera Aliados</p>
-                                    <p className="text-3xl font-black italic text-space-purple text-center">${metrics.dist.toLocaleString()}</p>
-                                </div>
-                                <div className="cyber-panel p-6 border-l-4 border-l-space-orange flex flex-col justify-between h-32">
-                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Balance Proveedores</p>
-                                    <p className="text-3xl font-black italic text-space-orange text-center">${metrics.prov.toLocaleString()}</p>
-                                </div>
-                                <div className="cyber-panel p-6 border-l-4 border-l-red-600 flex flex-col justify-between h-32">
-                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Alerta Críticos</p>
-                                    <p className="text-3xl font-black italic text-red-600 text-center">{metrics.criticos}</p>
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                <div className="cyber-panel p-8">
-                                    <h3 className="text-sm font-black italic uppercase mb-8 flex items-center gap-2"><i data-lucide="pie-chart" className="text-space-purple"></i> Flujo Operativo</h3>
-                                    <div className="min-h-[350px] flex items-center justify-center">
-                                        {ReactApexChart ? (
-                                            <ReactApexChart 
-                                                options={{
-                                                    labels: ['Clientes', 'Aliados', 'Proveedores'],
-                                                    colors: ['#39ff14', '#7c3aed', '#f97316'],
-                                                    theme: { mode: 'dark' },
-                                                    chart: { background: 'transparent' },
-                                                    legend: { position: 'bottom', fontStyle: 'italic', fontWeight: 900 },
-                                                    stroke: { show: false }
-                                                }}
-                                                series={[metrics.cli, metrics.dist, metrics.prov]}
-                                                type="donut" width="100%" height={350}
-                                            />
-                                        ) : <p className="opacity-20 italic">Cargando motor gráfico...</p>}
-                                    </div>
-                                </div>
-                                <div className="cyber-panel p-8 flex flex-col justify-center items-center text-center">
-                                    <h3 className="text-sm font-black italic uppercase mb-10 flex items-center gap-2"><i data-lucide="trending-up" className="text-space-orange"></i> Valorización de Activos</h3>
-                                    <p className="text-[10px] uppercase font-bold opacity-30 tracking-[0.3em] mb-2">Bodega Valorizada</p>
-                                    <p className="text-6xl font-black italic text-white neon-text-blue">${metrics.valorTotalBodega.toLocaleString()}</p>
-                                    <div className="w-full bg-white/5 h-2 rounded-full mt-10 overflow-hidden">
-                                        <div className="h-full bg-gradient-to-r from-space-purple to-space-orange" style={{ width: '85%' }}></div>
-                                    </div>
-                                </div>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 animate-in fade-in duration-700">
+                            {[ { l: 'Ingresos Clientes', v: metrics.cli, c: '#39ff14' }, { l: 'Cartera Aliados', v: metrics.dist, c: '#9333ea' }, { l: 'Info Proveedores', v: metrics.prov, c: '#f97316' }, { l: 'Patrimonio Bodega', v: metrics.valorBodega, c: '#00f3ff' } ].map((m, i) => (
+                                <div key={i} className="glass-panel p-6 border-l-4" style={{borderColor: m.c}}><p className="text-[9px] font-black text-slate-500 uppercase">{m.l}</p><p className="text-2xl font-black italic" style={{color: m.c}}>${(m.v || 0).toLocaleString()}</p></div>
+                            ))}
+                            <div className="md:col-span-4 glass-panel p-10 min-h-[400px] flex items-center justify-center">
+                                {ReactApexChart && <ReactApexChart options={{ labels: ['Clientes', 'Aliados', 'Proveedores'], colors: ['#39ff14', '#9333ea', '#f97316'], theme: { mode: 'dark' }, chart: { background: 'transparent' }, legend: { position: 'bottom', fontWeight: 900 }, stroke: { show: false } }} series={[ventas.filter(v=>v.entidad==='Cliente').length, ventas.filter(v=>v.entidad==='Distribuidor').length, ventas.filter(v=>v.entidad==='Proveedor').length]} type="donut" width="100%" height={350} />}
                             </div>
                         </div>
                     ) : view === 'despacho' ? (
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-500">
-                            <div className="lg:col-span-5 xl:col-span-4 space-y-6">
-                                <div className="cyber-panel p-8 space-y-6">
+                            <div className="lg:col-span-5 space-y-6">
+                                <div className="glass-panel p-8 space-y-6">
                                     <div className="flex p-1 bg-black/40 rounded-xl border border-white/10">
                                         {['Cliente', 'Distribuidor', 'Proveedor'].map(ent => (
-                                            <button key={ent} onClick={() => setDatosVenta({...datosVenta, entidad: ent, entregaDomicilio: false})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase transition-all ${datosVenta.entidad === ent ? (ent==='Proveedor'?'bg-space-purple text-white':ent==='Distribuidor'?'bg-[#39ff14] text-black':'bg-white text-black') : 'text-slate-600'}`}>{ent}</button>
+                                            <button key={ent} onClick={() => setDatosVenta({...datosVenta, entidad: ent})} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${datosVenta.entidad === ent ? 'bg-white text-black' : 'text-slate-600'}`}>{ent}</button>
                                         ))}
                                     </div>
-
                                     <div className="space-y-4">
-                                        <input type="text" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} placeholder="Producto" className="w-full pl-4 pr-4 py-3.5 bg-black/50 rounded-2xl text-xs outline-none border border-white/5 focus:border-space-purple" />
-                                        {filtrados.length > 0 && (
-                                            <div className="bg-[#101015] border border-white/20 rounded-2xl shadow-2xl max-h-48 overflow-y-auto">
-                                                {filtrados.map(p => (
-                                                    <div key={p.id} onClick={()=>{ setItemActual({...itemActual, productoId:p.id, nombre:p.nombre, sku:p.sku, valorUnitario:p.precio}); setSearchTerm(p.nombre); }} className="p-4 hover:bg-space-purple/10 cursor-pointer border-b border-white/5 text-xs font-bold uppercase"><span className="text-space-orange">[{p.sku}]</span> {p.nombre} ({p.stockActual})</div>
-                                                ))}
-                                            </div>
-                                        )}
+                                        <input list="mP" value={itemActual.sku} onChange={e=>setItemActual({...itemActual, sku: e.target.value, productoId:''})} placeholder="SKU O BUSCAR..." className="w-full p-4 bg-black/50 rounded-2xl text-xs border border-white/5 focus:border-space-purple outline-none font-bold uppercase" />
+                                        <datalist id="mP">{productos.map(p => <option key={p.id} value={p.sku}>{p.nombre}</option>)}</datalist>
                                         <div className="grid grid-cols-2 gap-3">
-                                            <input type="number" value={itemActual.cantidad} onChange={e=>setItemActual({...itemActual, cantidad:e.target.value})} placeholder="Cantidad" className="bg-black/50 p-4 rounded-2xl text-xs outline-none border border-white/5 font-bold" />
-                                            <input type="number" value={itemActual.valorUnitario} onChange={e=>setItemActual({...itemActual, valorUnitario:e.target.value})} placeholder="$ Valor" className="bg-black/50 p-4 rounded-2xl text-xs text-[#39ff14] outline-none border border-white/5 font-black" />
+                                            <input type="number" value={itemActual.cantidad} onChange={e=>setItemActual({...itemActual, cantidad:e.target.value})} placeholder="CANT" className="bg-black/50 p-4 rounded-xl text-xs border border-white/5 font-bold" />
+                                            <div className="bg-black/50 p-4 rounded-xl text-xs text-[#39ff14] font-black border border-white/5 flex items-center justify-between"><span className="opacity-30">UNIT:</span><span>${itemActual.valorUnitario}</span></div>
                                         </div>
-                                        <button onClick={()=>{ if(!itemActual.productoId || !itemActual.cantidad) return; setCarrito([...carrito, {...itemActual, idT:Date.now(), subtotal:parseFloat(itemActual.cantidad)*parseFloat(itemActual.valorUnitario)}]); setItemActual({productoId:'',nombre:'',sku:'',cantidad:'',valorUnitario:''}); setSearchTerm(''); }} className="w-full py-4 bg-space-purple/10 text-space-purple border border-space-purple/30 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-space-purple hover:text-white">Añadir al Pedido</button>
+                                        <button onClick={()=>{ if(!itemActual.productoId || !itemActual.cantidad) return; setCarrito([...carrito, { ...itemActual, idT: Date.now() }]); setItemActual({sku:'', nombre:'', productoId:'', cantidad:'', valorUnitario:0}); }} className="w-full py-4 bg-space-purple/10 text-space-purple border border-space-purple/40 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-space-purple hover:text-white transition-all">+ CARGAR ITEM</button>
                                     </div>
-
-                                    {/* SECCIÓN DE DOMICILIOS SOLICITADA */}
                                     {datosVenta.entidad === 'Cliente' && (
-                                        <div className="space-y-4 pt-4 border-t border-white/5">
-                                            <div className="flex justify-between items-center">
-                                                <label className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-2">
-                                                    <i data-lucide="bike" className="w-4 h-4 text-[#39ff14]"></i> Incluye Domicilio
-                                                </label>
-                                                <button 
-                                                    onClick={() => setDatosVenta({...datosVenta, entregaDomicilio: !datosVenta.entregaDomicilio})}
-                                                    className={`w-12 h-6 rounded-full relative transition-colors ${datosVenta.entregaDomicilio ? 'bg-[#39ff14]' : 'bg-slate-800'}`}
-                                                >
-                                                    <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${datosVenta.entregaDomicilio ? 'right-1' : 'left-1'}`}></div>
-                                                </button>
-                                            </div>
-
-                                            {datosVenta.entregaDomicilio && (
-                                                <div className="space-y-4 animate-in slide-in-from-top-4 duration-300">
-                                                    <label className="text-[9px] font-black uppercase text-space-orange italic ml-1">Seleccionar Domiciliario:</label>
-                                                    <div className="grid grid-cols-3 gap-2">
-                                                        {staffDomiciliarios.map(name => (
-                                                            <button 
-                                                                key={name}
-                                                                onClick={() => setDatosVenta({...datosVenta, domiciliarioAsignado: name})}
-                                                                className={`py-2 rounded-xl text-[9px] font-black uppercase border transition-all ${datosVenta.domiciliarioAsignado === name ? 'bg-space-orange border-space-orange text-white' : 'border-white/10 text-slate-500 hover:border-[#39ff14]/50'}`}
-                                                            >
-                                                                {name}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                    <input 
-                                                        type="number" 
-                                                        value={datosVenta.valorDomicilio} 
-                                                        onChange={e=>setDatosVenta({...datosVenta, valorDomicilio: e.target.value})} 
-                                                        placeholder="Costo Domicilio $" 
-                                                        className="w-full p-3 bg-black/50 border border-[#39ff14]/20 rounded-xl text-xs outline-none text-[#39ff14] font-black"
-                                                    />
-                                                </div>
-                                            )}
+                                        <div className="p-4 bg-black/30 rounded-2xl border border-white/5 space-y-4">
+                                            <div className="flex justify-between items-center text-[10px] font-black uppercase"><span>¿DOMICILIO?</span><button onClick={()=>setDatosVenta({...datosVenta, entregaDomicilio: !datosVenta.entregaDomicilio})} className={`w-10 h-5 rounded-full relative transition-all ${datosVenta.entregaDomicilio?'bg-space-orange':'bg-slate-800'}`}><div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${datosVenta.entregaDomicilio?'right-1':'left-1'}`}></div></button></div>
+                                            {datosVenta.entregaDomicilio && <div className="space-y-3 animate-in fade-in"><div className="grid grid-cols-5 gap-1">{['Cris', 'Jhon', 'Felipe', 'Cesar', 'Hades'].map(s => <button key={s} onClick={()=>setDatosVenta({...datosVenta, domiciliarioAsignado: s})} className={`py-1.5 rounded text-[8px] border font-black uppercase ${datosVenta.domiciliarioAsignado===s?'bg-space-orange text-white border-space-orange':'border-white/10 text-slate-500'}`}>{s}</button>)}</div><input type="number" value={datosVenta.valorDomicilio} onChange={e=>setDatosVenta({...datosVenta, valorDomicilio:e.target.value})} placeholder="ENVÍO $" className="w-full p-3 bg-black/50 border border-white/5 rounded-xl text-xs text-[#39ff14] font-black" /></div>}
                                         </div>
                                     )}
-
-                                    <form onSubmit={ejecutarConfirmacion} className="space-y-5">
-                                        <input type="text" value={datosVenta.nombreEntidad} onChange={e=>setDatosVenta({...datosVenta, nombreEntidad:e.target.value})} placeholder={`Nombre de ${datosVenta.entidad}`} className="w-full p-4 bg-black/50 rounded-2xl text-xs outline-none border border-white/5 focus:border-space-orange" required />
-                                        <div className="bg-black/80 p-6 rounded-[2.5rem] border-2 border-space-purple/30 flex justify-between items-center shadow-inner"><span className="text-[10px] font-black uppercase opacity-40 italic">TOTAL:</span><span className="text-3xl font-black text-[#39ff14]">${totalOperacion.toLocaleString()}</span></div>
-                                        <button type="submit" disabled={carrito.length===0} className={`w-full text-black font-black py-5 rounded-2xl italic uppercase tracking-tighter shadow-2xl transition-all disabled:opacity-20 ${datosVenta.entidad==='Proveedor' ? 'bg-space-purple text-white' : 'bg-gradient-to-br from-space-purple to-space-orange'}`}>Confirmar en Cloud</button>
+                                    <div className="p-5 bg-black/30 rounded-3xl border border-white/5 space-y-4">
+                                        <div className="flex gap-2"><select value={metodoActual.metodo} onChange={e=>setMetodoActual({...metodoActual, metodo:e.target.value})} className="flex-1 bg-black/50 p-3 rounded-xl text-[10px] outline-none border border-white/5 font-black uppercase text-space-purple">{ (['Efectivo', 'Transferencia', 'Crédito', 'Datáfono', ...(datosVenta.entidad!=='Cliente'?['Cruce']:[])]).map(f => <option key={f} value={f}>{f}</option>) }</select><input type="number" value={metodoActual.monto} onChange={e=>setMetodoActual({...metodoActual, monto:e.target.value})} placeholder="$" className="w-24 bg-black/50 p-3 rounded-xl text-xs font-black text-[#39ff14]" /><button onClick={() => { if(!metodoActual.monto) return; setPagos([...pagos, {...metodoActual, id: Date.now()}]); setMetodoActual({metodo:'Efectivo', monto:''}); }} className="p-3 bg-space-orange/20 text-space-orange rounded-xl"><i data-lucide="plus" className="w-4 h-4"></i></button></div>
+                                        <div className="flex flex-wrap gap-2">{pagos.map(p => <span key={p.id} className="text-[8px] px-2 py-1 rounded bg-white/5 border border-white/10 font-black uppercase flex items-center gap-2">{p.metodo}: ${p.monto} <button onClick={()=>setPagos(pagos.filter(x=>x.id!==p.id))} className="text-red-500">x</button></span>)}</div>
+                                    </div>
+                                    <form onSubmit={confirmVenta} className="space-y-6">
+                                        <input type="text" value={datosVenta.nombreEntidad} onChange={e=>setDatosVenta({...datosVenta, nombreEntidad:e.target.value})} placeholder="IDENTIFICACIÓN RESPONSABLE" className="w-full p-4 bg-black/50 rounded-2xl text-xs border border-white/10 font-bold uppercase focus:border-space-orange outline-none" required />
+                                        <div className="bg-black/80 p-6 rounded-[2.5rem] border-2 border-space-purple/30 flex justify-between items-center shadow-inner">
+                                            <div><p className="text-[8px] font-black uppercase opacity-40">Abonado:</p><p className={`text-sm font-black ${totalPagado >= totalOp ? 'text-[#39ff14]' : 'text-red-500 animate-pulse'}`}>${totalPagado.toLocaleString()}</p></div>
+                                            <div className="text-right"><p className="text-[9px] font-black uppercase text-space-purple">Balance:</p><p className="text-3xl font-black italic text-white">${totalOp.toLocaleString()}</p></div>
+                                        </div>
+                                        <button type="submit" disabled={carrito.length === 0 || totalPagado < totalOp} className="btn-primary-nasa">
+                                            <i data-lucide="zap" className="w-5 h-5 inline mr-1 fill-current"></i> Ejecutar Protocolo NASA
+                                        </button>
                                     </form>
                                 </div>
                             </div>
-                            <div className="lg:col-span-7 xl:col-span-8">
-                                <div className="cyber-panel overflow-hidden border-white/5 h-full">
-                                    <div className="p-6 border-b border-white/5 bg-white/5 font-black uppercase italic text-[10px] text-white flex items-center justify-between"><span>Transacciones en Vivo</span><div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div></div>
-                                    <div className="overflow-x-auto"><table className="w-full text-left text-[10px]"><thead className="bg-black/80 text-slate-500 uppercase font-black tracking-widest border-b border-white/5"><tr><th className="p-6">Nodo</th><th className="p-6">Sujeto</th><th className="p-6 text-center">Entrega</th><th className="p-6 text-center">Total</th><th className="p-6 text-center">Estado</th><th className="p-6 text-right">Anular</th></tr></thead>
-                                        <tbody className="divide-y divide-white/5">{ventas.map(v => (
-                                            <tr key={v.id} className="hover:bg-white/5 transition-colors border-l-4 border-l-transparent hover:border-l-space-orange">
-                                                <td className="p-6 uppercase text-[9px] opacity-40">{v.entidad}</td>
-                                                <td className="p-6 font-black uppercase text-white truncate max-w-[120px]">{v.nombreEntidad}</td>
-                                                <td className="p-6 text-center">
-                                                    {v.entregaDomicilio ? (
-                                                        <span className="text-[#39ff14] font-black italic flex items-center justify-center gap-1"><i data-lucide="truck" className="w-3 h-3"></i> {v.domiciliarioAsignado}</span>
-                                                    ) : <span className="opacity-20">Local</span>}
-                                                </td>
-                                                <td className="p-6 text-center font-black text-[#39ff14] italic text-xs">${(parseFloat(v.totalVenta) || 0).toLocaleString()}</td>
-                                                <td className="p-6 text-center"><span className={`px-4 py-1.5 rounded-xl border text-[8px] font-black uppercase ${v.estado === 'Pagado' ? 'text-[#39ff14] border-[#39ff14]/30' : 'text-space-orange border-space-orange/30'}`}>{v.estado}</span></td>
-                                                <td className="p-6 text-right"><button onClick={async ()=>{ if(confirm('¿Anular registro?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', v.id)); }} className="text-slate-700 hover:text-red-500 transition-colors"><i data-lucide="trash-2" className="w-4 h-4"></i></button></td>
-                                            </tr>))}</tbody>
-                                    </table></div>
-                                </div>
-                            </div>
+                            <div className="lg:col-span-7"><div className="glass-panel overflow-hidden h-full"><div className="p-6 bg-white/5 font-black uppercase text-[10px] flex justify-between border-b border-white/5"><span>Log Operativo</span><div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div></div><div className="overflow-x-auto"><table className="w-full text-left text-[9px]"><thead className="bg-black/50 text-slate-500 uppercase font-black"><tr><th className="p-6">Nodo</th><th className="p-6">Sujeto</th><th className="p-6 text-center">Monto</th><th className="p-6 text-right">Borrar</th></tr></thead><tbody className="divide-y divide-white/5">{ventas.map(v => (<tr key={v.id} className="hover:bg-white/5 transition-colors border-l-4 border-l-transparent hover:border-l-space-orange"><td className="p-6 opacity-40 uppercase font-black text-[8px]">{v.entidad}</td><td className="p-6 font-black uppercase text-white truncate max-w-[120px]">{v.nombreEntidad}</td><td className="p-6 text-center font-black text-[#39ff14] italic text-xs font-mono">${(v.totalVenta || 0).toLocaleString()}</td><td className="p-6 text-right"><button onClick={async ()=>{ if(confirm('¿Anular registro?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', v.id)); }} className="text-slate-800 hover:text-red-500 p-2"><i data-lucide="trash-2" className="w-4 h-4"></i></button></td></tr>))}</tbody></table></div></div></div>
                         </div>
                     ) : view === 'gestion' ? (
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-500">
-                            <div className="lg:col-span-4 cyber-panel p-8 border-space-orange/30">
-                                <h2 className="text-xl font-black mb-8 italic uppercase text-white border-l-4 border-space-purple pl-4">Vincular SKU</h2>
-                                <form onSubmit={async (e)=>{ e.preventDefault(); await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), { sku: newProduct.sku, nombre: newProduct.nombre, precio: parseFloat(newProduct.precio) || 0, stockInicial: parseInt(newProduct.stockInicial) || 0 }); setNewProduct({sku:'',nombre:'',precio:'',stockInicial:''}); }} className="space-y-5">
-                                    <input value={newProduct.sku} onChange={e=>setNewProduct({...newProduct, sku:e.target.value})} placeholder="SKU" className="w-full p-4 bg-black/50 rounded-2xl text-xs outline-none border border-white/5 focus:border-space-purple text-white font-bold uppercase" required />
-                                    <input value={newProduct.nombre} onChange={e=>setNewProduct({...newProduct, nombre:e.target.value})} placeholder="Nombre Comercial" className="w-full p-4 bg-black/50 rounded-2xl text-xs outline-none border border-white/5 focus:border-space-purple text-white font-bold" required />
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <input type="number" value={newProduct.precio} onChange={e=>setNewProduct({...newProduct, precio:e.target.value})} placeholder="$ Valor Base" className="bg-black/50 p-4 rounded-2xl text-xs outline-none border border-white/5" required />
-                                        <input type="number" value={newProduct.stockInicial} onChange={e=>setNewProduct({...newProduct, stockInicial:e.target.value})} placeholder="Stock Inicial" className="bg-black/50 p-4 rounded-2xl text-xs outline-none border border-white/5" required />
-                                    </div>
-                                    <button type="submit" className="w-full bg-space-orange text-white font-black py-5 rounded-2xl uppercase tracking-tighter shadow-2xl transition-all hover:scale-[1.02]">Ingresatr en Inventario</button>
-                                </form>
-                            </div>
-                            <div className="lg:col-span-8 cyber-panel overflow-hidden border-white/5">
-                                <table className="w-full text-left text-xs"><thead className="bg-[#1a1a24] text-space-orange uppercase font-black border-b border-white/5 tracking-widest"><tr><th className="p-6">Master SKU</th><th className="p-6">Producto</th><th className="p-6 text-center">Stock Actual</th><th className="p-6 text-right">Anular</th></tr></thead>
-                                    <tbody className="divide-y divide-white/5">{inventarioActual.map(p => (
-                                        <tr key={p.id} className="hover:bg-space-purple/5 transition-colors border-l-4 border-l-transparent hover:border-l-space-purple font-black"><td className="p-6 font-mono font-bold text-space-purple uppercase tracking-tighter">{p.sku}</td><td className="p-6 font-bold text-white uppercase italic">{p.nombre}</td><td className={`p-6 text-center font-black ${p.stockActual < 10 ? 'text-red-500 animate-pulse' : 'text-[#39ff14]'}`}>{p.stockActual} UNIDADES</td><td className="p-6 text-right"><button onClick={async ()=>{ if(confirm('¿Eliminar SKU?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', p.id)); }} className="text-slate-800 hover:text-red-500 p-2 transition-transform hover:scale-125"><i data-lucide="trash-2" className="w-5 h-5"></i></button></td></tr>))}</tbody>
-                                </table></div>
+                            <div className="lg:col-span-4 glass-panel p-8 border-space-orange/30"><h2 className="text-xl font-black mb-8 italic uppercase border-l-4 border-space-purple pl-4">{newProduct.id ? 'Editar Master' : 'Nuevo SKU'}</h2><form onSubmit={upsertInv} className="space-y-5"><input value={newProduct.sku} onChange={e=>setNewProduct({...newProduct, sku:e.target.value})} placeholder="SKU (AUTO-GEN)" className="w-full p-4 bg-black/50 rounded-2xl text-xs border border-white/5 text-white font-bold uppercase" /><input value={newProduct.nombre} onChange={e=>setNewProduct({...newProduct, nombre:e.target.value})} placeholder="NOMBRE COMERCIAL" className="w-full p-4 bg-black/50 rounded-2xl text-xs border border-white/5 font-black uppercase" required /><div className="grid grid-cols-2 gap-4"><input type="number" value={newProduct.precio} onChange={e=>setNewProduct({...newProduct, precio:e.target.value})} placeholder="BASE $" className="bg-black/50 p-4 rounded-2xl text-xs font-black border border-white/5" required /><input type="number" value={newProduct.stockInicial} onChange={e=>setNewProduct({...newProduct, stockInicial:e.target.value})} placeholder="CANT" className="bg-black/50 p-4 rounded-2xl text-xs font-black border border-white/5" required /></div><button type="submit" className="w-full bg-space-orange text-white font-black py-5 rounded-2xl uppercase shadow-2xl transition-all">{newProduct.id ? 'Actualizar Master' : '+ Inyectar Nube'}</button></form></div>
+                            <div className="lg:col-span-8 glass-panel overflow-hidden border-white/5"><table className="w-full text-left text-xs"><thead className="bg-[#1a1a24] text-space-orange uppercase font-black border-b border-white/10 tracking-widest"><tr><th className="p-6">Master SKU</th><th className="p-6">Nombre</th><th className="p-6 text-center">Stock</th><th className="p-6 text-right">Admin</th></tr></thead><tbody className="divide-y divide-white/10">{productos.map(p => (<tr key={p.id} className="hover:bg-space-purple/5 font-black uppercase"><td className="p-6 font-mono text-space-purple font-black">{p.sku}</td><td className="p-6 italic text-white">{p.nombre}</td><td className={`p-6 text-center font-black ${p.stockActual<10?'text-red-500 animate-pulse':'text-[#39ff14]'}`}>{p.stockActual} Unids</td><td className="p-6 text-right flex justify-end gap-2"><button onClick={()=>setNewProduct({id:p.id, sku:p.sku, nombre:p.nombre, precio:p.precio, stockInicial:p.stockActual})} className="text-blue-500 p-2"><i data-lucide="edit-3" className="w-4 h-4"></i></button><button onClick={async ()=>{ if(confirm('¿Borrar?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', p.id)); }} className="text-red-900 p-2"><i data-lucide="trash-2" className="w-4 h-4"></i></button></td></tr>))}</tbody></table></div>
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-300">
-                            <div className="lg:col-span-4 cyber-panel p-8 border-white/20">
-                                <h2 className="text-xl font-black mb-8 italic uppercase text-white border-l-4 border-white pl-4">Nuevo Aliado</h2>
-                                <form onSubmit={async (e)=>{ e.preventDefault(); await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'distribuidores'), {...newDist, timestamp: Date.now()}); setNewDist({nombre:'',telefono:''}); }} className="space-y-5">
-                                    <input value={newDist.nombre} onChange={e=>setNewDist({...newDist, nombre:e.target.value})} placeholder="Nombre Corporativo" className="w-full p-4 bg-black/50 rounded-2xl text-xs outline-none border border-white/5 focus:border-white text-white font-bold" required />
-                                    <input value={newDist.telefono} onChange={e=>setNewDist({...newDist, telefono:e.target.value})} placeholder="Uplink Celular" className="w-full p-4 bg-black/50 rounded-2xl text-xs outline-none border border-white/5" />
-                                    <button type="submit" className="w-full bg-white text-black font-black py-5 rounded-2xl uppercase tracking-tighter shadow-2xl hover:scale-[1.02] transition-all">+ Registrar Socio</button>
-                                </form>
-                            </div>
-                            <div className="lg:col-span-8 cyber-panel overflow-hidden border-white/5">
-                                <table className="w-full text-left text-xs"><thead className="bg-[#1a1a24] text-white uppercase font-black border-b border-white/5 tracking-widest"><tr><th className="p-6">Socio de Negocio</th><th className="p-6">Uplink Celular</th><th className="p-6 text-right">Anular</th></tr></thead>
-                                    <tbody className="divide-y divide-white/5">{distribuidores.map(d => (
-                                        <tr key={d.id} className="hover:bg-white/10 transition-colors border-l-4 border-l-transparent hover:border-l-white"><td className="p-6 font-bold text-white uppercase italic">{d.nombre}</td><td className="p-6 font-mono text-space-purple">{d.telefono}</td><td className="p-6 text-right"><button onClick={async ()=>{ if(confirm('¿Eliminar?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'distribuidores', d.id)); }} className="text-slate-800 hover:text-red-500 p-2"><i data-lucide="trash-2" className="w-4 h-4"></i></button></td></tr>))}</tbody>
-                                </table></div>
+                            <div className="lg:col-span-4 glass-panel p-8 border-white/20"><h2 className="text-xl font-black mb-8 italic uppercase border-l-4 border-white pl-4">Nuevo Socio Aliado</h2><form onSubmit={async (e)=>{ e.preventDefault(); if(newDist.id) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'distribuidores', newDist.id), {nombre:newDist.nombre.toUpperCase(), telefono:newDist.telefono}); else await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'distribuidores'), {nombre:newDist.nombre.toUpperCase(), telefono:newDist.telefono, timestamp: Date.now()}); setNewDist({id:null, nombre:'', telefono:''}); }} className="space-y-5"><input value={newDist.nombre} onChange={e=>setNewDist({...newDist, nombre:e.target.value})} placeholder="NOMBRE CORPORATIVO" className="w-full p-4 bg-black/50 rounded-2xl text-xs font-black uppercase border border-white/10 outline-none focus:border-white" required /><input value={newDist.telefono} onChange={e=>setNewDist({...newDist, telefono:e.target.value})} placeholder="UPLINK CELULAR" className="w-full p-4 bg-black/50 rounded-2xl text-xs font-black border border-white/10 outline-none focus:border-white" /><button type="submit" className="w-full bg-white text-black font-black py-5 rounded-2xl uppercase tracking-widest shadow-2xl hover:scale-[1.02] transition-all">{newDist.id ? 'Actualizar' : '+ Registrar Socio'}</button></form></div>
+                            <div className="lg:col-span-8 glass-panel overflow-hidden border-white/5"><table className="w-full text-left text-xs"><thead className="bg-[#1a1a24] text-white uppercase font-black border-b border-white/10 tracking-widest"><tr><th className="p-6">Socio de Negocio</th><th className="p-6">Uplink</th><th className="p-6 text-right">Borrar</th></tr></thead><tbody className="divide-y divide-white/10">{distribuidores.map(d => (<tr key={d.id} className="hover:bg-white/10 font-black uppercase italic"><td className="p-6">{d.nombre}</td><td className="p-6 font-mono text-space-purple font-black">{d.telefono}</td><td className="p-6 text-right flex justify-end gap-2"><button onClick={()=>setNewDist({id:d.id, nombre:d.nombre, telefono:d.telefono})} className="text-blue-500 p-2"><i data-lucide="edit-3" className="w-4 h-4"></i></button><button onClick={async ()=>{ if(confirm('¿Eliminar?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'distribuidores', d.id)); }} className="text-slate-800 hover:text-red-500 p-2"><i data-lucide="trash-2" className="w-4 h-4"></i></button></td></tr>))}</tbody></table></div>
                         </div>
                     )}
                 </div>
