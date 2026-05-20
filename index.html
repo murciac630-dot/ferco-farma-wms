@@ -291,7 +291,7 @@
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), data);
                     mostrarNotificacion(`Producto ${skuF} inyectado al catálogo cloud.`);
                 }
-                setNewProduct({ id: null, sku: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
+                setNewProduct({ id: null, sku: '', text: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
             };
 
             // --- MOTOR DE CARGA MASIVA OPTIMIZADO (BIFURCACIÓN DE ACCIONES) ---
@@ -399,6 +399,11 @@
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, "Plantilla");
                 XLSX.writeFile(wb, `PLANTILLA_${type}.xlsx`);
+            };
+
+            // Función puente alias para evitar ReferenceError en render
+            const exportarPlantilla = () => {
+                downloadTemplate('INVENTARIO');
             };
 
             const exportarVentas = () => {
@@ -726,7 +731,7 @@
                                 <form onSubmit={async (e)=>{ 
                                     e.preventDefault(); 
                                     if(newSujeto.id) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', newSujeto.id), {nombre:newSujeto.nombre.toUpperCase(), tipo:newSujeto.tipo, telefono:newSujeto.telefono}); 
-                                    else await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), {nombre:newSujeto.nombre.toUpperCase(), tipo:newSujeto.tipo, telefono:newSujeto.telefono, timestamp: Date.now()}); 
+                                    else await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), {nombre:newSujeto.nombre.toUpperCase(), tipo:newSujeto.tipo, telefono:newSujeto.tipo==='Cliente'?newSujeto.telefono:'', timestamp: Date.now()}); 
                                     setNewSujeto({id:null, nombre:'', tipo:'Cliente', telefono:''}); 
                                     mostrarNotificacion("Sujeto registrado en el directorio central.");
                                 }} className="space-y-6">
@@ -734,7 +739,7 @@
                                         {['Cliente', 'Proveedor', 'Distribuidor'].map(t => <button key={t} type="button" onClick={()=>setNewSujeto({...newSujeto, tipo:t})} className={`py-3 rounded-lg text-[8px] font-black uppercase transition-all ${newSujeto.tipo===t?'bg-white text-black shadow-xl':'text-slate-600'}`}>{t}</button>)}
                                     </div>
                                     <input value={newSujeto.nombre} onChange={e=>setNewSujeto({...newSujeto, nombre:e.target.value})} placeholder="NOMBRE / ENTIDAD COMERCIAL" className="w-full p-4 bg-black/60 rounded-xl text-xs font-black border border-white/5 focus:border-white shadow-inner text-white outline-none uppercase" required />
-                                    <input value={newSujeto.telefono} onChange={e=>setNewSujeto({...newSujeto, telefono:e.target.value})} placeholder="TELÉFONO / UPLINK" className="w-full p-4 bg-[#1a1a24] rounded-xl text-xs font-black border border-white/5 focus:border-white shadow-inner text-white outline-none" />
+                                    {newSujeto.tipo === 'Cliente' && <input value={newSujeto.telefono} onChange={e=>setNewSujeto({...newSujeto, telefono:e.target.value})} placeholder="TELÉFONO CLIENTE" className="w-full p-4 bg-black/60 rounded-xl text-xs font-black border border-white/5 focus:border-white shadow-inner text-white outline-none shadow-inner" />}
                                     <button type="submit" className="w-full bg-white text-black font-black py-4 rounded-xl uppercase tracking-widest shadow-2xl hover:scale-105 active:scale-95 transition-all text-xs tracking-widest italic uppercase">REGISTRAR SUJETO</button>
                                 </form>
                                 <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
