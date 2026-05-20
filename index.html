@@ -138,7 +138,7 @@
             const [datosVenta, setDatosVenta] = useState({ 
                 entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, domiciliarioAsignado: 'Cris', 
                 valorDomicilio: 0, canal: 'Ferco Farma', descontarStockHades: true, aplicarDescuento: false, valorDescuento: 0, 
-                responsable: 'Cristian / Admin' 
+                responsable: 'Cristian / Admin', cuentaDestino: 'CRIS'
             });
 
             // UI Dropdown States
@@ -268,7 +268,7 @@
                         }
                     }
                     setCarrito([]); setPagos([]);
-                    setDatosVenta(prev => ({ ...prev, entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, valorDomicilio: 0, canal: 'Ferco Farma', descontarStockHades: true, aplicarDescuento: false, valorDescuento: 0 }));
+                    setDatosVenta(prev => ({ ...prev, entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, valorDomicilio: 0, canal: 'Ferco Farma', descontarStockHades: true, aplicarDescuento: false, valorDescuento: 0, cuentaDestino: 'CRIS' }));
                     mostrarNotificacion("Operación de despacho registrada con éxito en la nube.");
                 } catch (err) { mostrarNotificacion("Falla de sincronización.", "error"); }
             };
@@ -294,7 +294,7 @@
                 setNewProduct({ id: null, sku: '', text: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
             };
 
-            // --- MOTOR DE CARGA MASIVA OPTIMIZADO (BIFURCACIÓN DE ACCIONES) ---
+            // --- MOTOR DE CARGA MASIVA OPTIMIZADO ---
             const uploadExcel = async (e, type) => {
                 const file = e.target.files[0];
                 if (!file) return;
@@ -315,7 +315,6 @@
                                 let skuE = String(row.SKU || "").trim().toUpperCase();
                                 const cat = row.Categoria || 'Producto Final';
                                 
-                                // Si viene vacío, calcular consecutivo incremental dinámicamente en el lazo
                                 if (!skuE) {
                                     skuE = getNextSKU(cat, currentProductsInBatch);
                                 }
@@ -335,7 +334,6 @@
                                 };
 
                                 if (exist) {
-                                    // BIFURCACIÓN: Actualización
                                     await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', exist.id), { 
                                         stockActual: parsedStock, 
                                         precioCosto: prodData.precioCosto,
@@ -346,7 +344,6 @@
                                     });
                                     actualizados++;
                                 } else {
-                                    // BIFURCACIÓN: Creación de nuevos registros
                                     const docRef = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), prodData);
                                     currentProductsInBatch.push({ id: docRef.id, ...prodData });
                                     creados++;
@@ -370,6 +367,7 @@
                                 const p = productos.find(x => x.sku === row.SKU);
                                 if (p && row.Sujeto) {
                                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), {
+                                        cuentaDestino: row.Cuenta_Ingreso || 'CRIS',
                                         entidad: row.Tipo_Sujeto || 'Cliente', nombreEntidad: row.Sujeto.toUpperCase(), canal: row.Canal || 'Ferco Farma',
                                         totalVenta: parseFloat(row.Total) || 0, items: [{ productoId: p.id, sku: p.sku, nombre: p.nombre, cantidad: row.Cantidad || 1, valorUnitario: row.Valor_Uni || 0, fraccion: 1 }],
                                         pagos: [{ metodo: row.Metodo || 'Efectivo', monto: row.Total || 0, comentario: row.Obs || '' }],
@@ -393,7 +391,7 @@
                 let data = [];
                 if (type === 'INVENTARIO') data = [{ SKU: "", Nombre: "ACETAMINOFEN", Categoria: "Producto Final", Costo: 1000, Precio_Cliente: 1500, Precio_Socio: 1200, Stock: 50 }];
                 if (type === 'SUJETOS') data = [{ Nombre: "JUAN PEREZ", Tipo: "Cliente", Telefono: "300123456" }];
-                if (type === 'DESPACHOS') data = [{ Fecha: "15/05/2026", Hora: "09:00:00", Sujeto: "JUAN PEREZ", Tipo_Sujeto: "Cliente", Canal: "Ferco Farma", SKU: "PFNASA-001", Cantidad: 1, Valor_Uni: 1500, Total: 1500, Metodo: "Efectivo", Obs: "Carga de Saldos" }];
+                if (type === 'DESPACHOS') data = [{ Fecha: "15/05/2026", Hora: "09:00:00", Sujeto: "JUAN PEREZ", Tipo_Sujeto: "Cliente", Canal: "Ferco Farma", SKU: "PFNASA-001", Cantidad: 1, Valor_Uni: 1500, Total: 1500, Metodo: "Efectivo", Obs: "Carga de Saldos", Cuenta_Ingreso: "CRIS" }];
                 
                 const ws = XLSX.utils.json_to_sheet(data);
                 const wb = XLSX.utils.book_new();
@@ -401,7 +399,7 @@
                 XLSX.writeFile(wb, `PLANTILLA_${type}.xlsx`);
             };
 
-            // Función puente alias para evitar ReferenceError en render
+            // Función puente alias para descargar plantilla
             const exportarPlantilla = () => {
                 downloadTemplate('INVENTARIO');
             };
@@ -409,6 +407,7 @@
             const exportarVentas = () => {
                 const ws = XLSX.utils.json_to_sheet(ventas.map(v => ({
                     ID: v.id, FECHA: v.fecha, HORA: v.hora, CANAL: v.canal, TIPO: v.entidad, SUJETO: v.nombreEntidad,
+                    CUENTA_INGRESO: v.cuentaDestino || 'CRIS',
                     VALOR_FERCO: v.split?.ferco || v.totalVenta, VALOR_HADES: v.split?.hades || 0, TOTAL: v.totalVenta,
                     AUDIT: v.auditLog
                 })));
@@ -472,7 +471,7 @@
                                         ))}
                                     </div>
                                 </div>
-                                <div className="lg:col-span-8 glass-panel p-6 min-h-[400px] flex items-center justify-center">
+                                <div className="lg:col-span-8 glass-panel p-6 min-h-[400px] flex items-center justify-center text-white">
                                     {ReactApexChart && <ReactApexChart options={{ labels: ['Clientes', 'Aliados', 'Proveedores'], colors: ['#39ff14', '#9333ea', '#f97316'], theme: { mode: 'dark' }, chart: { background: 'transparent' }, stroke: { show: false }, legend: { position: 'bottom', fontStyle: 'italic', fontWeight: 900 } }} series={[metrics.cli, metrics.dist, metrics.prov]} type="donut" width="100%" height={340} />}
                                 </div>
                             </div>
@@ -597,6 +596,23 @@
                                         {datosVenta.aplicarDescuento && <input type="number" value={datosVenta.valorDescuento} onChange={e=>setDatosVenta({...datosVenta, valorDescuento:e.target.value})} placeholder="TOTAL DESCUENTO $" className="w-full p-2.5 bg-black/60 border border-white/10 rounded-lg text-xs text-space-purple font-black outline-none shadow-inner" />}
                                     </div>
 
+                                    {/* REQUERIMIENTO: Selector Cuenta de Ingreso */}
+                                    <div className="p-4 bg-black/30 rounded-2xl border border-white/5 space-y-3">
+                                        <p className="text-[8px] font-black uppercase text-space-purple tracking-widest italic">Cuenta de Ingreso:</p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {['CRIS', 'JHON'].map(cta => (
+                                                <button 
+                                                    key={cta} 
+                                                    type="button" 
+                                                    onClick={() => setDatosVenta({...datosVenta, cuentaDestino: cta})} 
+                                                    className={`py-2 rounded-lg text-[9px] font-black border transition-all ${datosVenta.cuentaDestino === cta ? 'bg-cyber-green text-black border-cyber-green shadow-md shadow-cyber-green/20' : 'border-white/5 text-slate-500 hover:text-white'}`}
+                                                >
+                                                    {cta}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
                                     {datosVenta.canal === 'Hades' && (
                                         <div className="p-4 bg-hades-gold/5 rounded-2xl border border-hades-gold/20 flex justify-between items-center text-[9px] font-black uppercase text-hades-gold">
                                             <span>¿Descontar de Stock Bodega?</span>
@@ -655,8 +671,8 @@
                                             <tbody className="divide-y divide-white/5">
                                                 {ventas.map(v => (
                                                     <tr key={v.id} className="hover:bg-white/5 transition-all border-l-4 border-l-transparent hover:border-l-space-purple">
-                                                        <td className="p-5 opacity-40 uppercase font-black text-[8px] leading-tight text-white">{v.hora}<br/>{v.fecha}<br/><span className="text-space-orange font-bold">{v.canal}</span></td>
-                                                        <td className="p-5 font-black uppercase truncate max-w-[140px] text-white">{v.nombreEntidad}</td>
+                                                        <td className="p-5 opacity-40 uppercase font-black text-[8px] leading-tight text-white">{v.hora}<br/>{v.fecha}<br/><span className="text-space-orange font-bold">{v.canal}</span><br/><span className="text-[#39ff14] font-black">CTA: {v.cuentaDestino || 'CRIS'}</span></td>
+                                                        <td className="p-5 font-black uppercase truncate max-w-[140px]">{v.nombreEntidad}</td>
                                                         <td className="p-5 text-center font-black text-cyber-green italic text-sm text-white">${(v.totalVenta || 0).toLocaleString()}</td>
                                                         <td className="p-5 text-right"><button onClick={async ()=>{ if(confirm('¿Anular registro?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', v.id)); }} className="text-slate-800 hover:text-red-500 p-2 hover:scale-125 transition-transform"><i data-lucide="trash-2" className="w-4 h-4"></i></button></td>
                                                     </tr>
@@ -675,7 +691,7 @@
                                     <form onSubmit={upsertProd} className="space-y-4">
                                         <div className="grid grid-cols-3 gap-1.5 p-1 bg-black/50 rounded-xl border border-white/5 shadow-inner">
                                             {['Producto Final', 'Insumo', 'Empaque'].map(cat => (
-                                                <button key={cat} type="button" onClick={()=>setNewProduct({...newProduct, categoria: cat})} className={`py-2 rounded-lg text-[7px] font-black transition-all ${newProduct.categoria === cat ? 'bg-white text-black shadow-lg' : 'text-slate-600 hover:text-white'}`}>{cat.toUpperCase()}</button>
+                                                <button key={cat} type="button" onClick={()=>setNewProduct({...newProduct, category: cat, categoria: cat})} className={`py-2 rounded-lg text-[7px] font-black transition-all ${newProduct.categoria === cat ? 'bg-white text-black shadow-lg' : 'text-slate-600 hover:text-white'}`}>{cat.toUpperCase()}</button>
                                             ))}
                                         </div>
                                         <div className="relative text-white">
@@ -690,7 +706,7 @@
                                             )}
                                             <input type="number" value={newProduct.precioSocio} onChange={e=>setNewProduct({...newProduct, precioSocio:e.target.value})} placeholder="PRECIO A ALIADOS $" className="w-full bg-black/60 p-2.5 rounded-lg text-xs font-black border border-white/5 text-white outline-none focus:border-white shadow-inner text-white" required />
                                         </div>
-                                        <input type="number" value={newProduct.stockInicial} onChange={e=>setNewProduct({...newProduct, stockInicial:e.target.value})} placeholder="CANTIDAD A INGRESAR" className="w-full bg-black/60 p-3.5 rounded-xl text-xs font-black border border-white/10 text-white shadow-inner" required />
+                                        <input type="number" value={newProduct.stockInicial} onChange={e=>setNewProduct({...newProduct, stockInicial:e.target.value})} placeholder="CANTIDAD A INGRESAR" className="w-full bg-black/60 p-3.5 rounded-xl text-xs font-black border border-white/10 text-white shadow-inner shadow-inner" required />
                                         <button type="submit" className="w-full bg-space-orange text-white font-black py-4 rounded-xl uppercase shadow-xl hover:scale-105 active:scale-95 transition-all text-[10px] tracking-widest italic uppercase">ACTUALIZAR STOCK</button>
                                     </form>
                                 </div>
@@ -746,7 +762,7 @@
                                     <h3 className="text-[10px] font-black uppercase text-cyber-green italic text-center tracking-widest">ACTUALIZACION MASIVA</h3>
                                     <input type="file" ref={fileSujRef} onChange={(e) => uploadExcel(e, 'SUJETOS')} className="hidden" accept=".xlsx, .xls" />
                                     <div className="grid grid-cols-2 gap-2 text-white">
-                                        <button onClick={() => fileSujRef.current.click()} disabled={isSyncing} className="py-3 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">CARGAR ARCHIVO</button>
+                                        <button onClick={() => fileSujRef.click()} disabled={isSyncing} className="py-3 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">CARGAR ARCHIVO</button>
                                         <button onClick={() => downloadTemplate('SUJETOS')} className="py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">PLANTILLA</button>
                                     </div>
                                 </div>
