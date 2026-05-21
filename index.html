@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FERCO FARMA | REGISTROS DE BODEGA v17.4</title>
+    <title>FERCO FARMA | REGISTROS DE BODEGA v18.0</title>
     
     <!-- Motores de Estilo y UI -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -15,10 +15,11 @@
     <script src="https://unpkg.com/prop-types@15.8.1/prop-types.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Motores de Gráficos y Excel -->
+    <!-- Motores de Gráficos, Excel y Encriptación AES -->
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <script src="https://cdn.jsdelivr.net/npm/react-apexcharts@1.4.1/dist/react-apexcharts.iife.min.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 
     <script>
         tailwind.config = {
@@ -113,6 +114,24 @@
         const { useState, useEffect, useMemo, useRef } = React;
         const ReactApexChart = window.ReactApexCharts ? (window.ReactApexCharts.default || window.ReactApexCharts) : null;
 
+        // --- ENCRIPTACIÓN CLIENT-SIDE (AES-256) ---
+        const encryptVal = (val, key) => {
+            if (val === undefined || val === null || val === '') return '';
+            return CryptoJS.AES.encrypt(String(val), key).toString();
+        };
+
+        const decryptVal = (cipher, key, isNumeric = false) => {
+            if (!cipher || !key) return isNumeric ? 0 : '';
+            try {
+                const bytes = CryptoJS.AES.decrypt(cipher, key);
+                const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+                if (!decrypted) return isNumeric ? 0 : '';
+                return isNumeric ? (parseFloat(decrypted) || 0) : decrypted;
+            } catch (e) {
+                return isNumeric ? 0 : '[Error de Descifrado]';
+            }
+        };
+
         const App = () => {
             const [user, setUser] = useState(null);
             const [productos, setProductos] = useState([]);
@@ -122,7 +141,14 @@
             const [loading, setLoading] = useState(true);
             const [isSyncing, setIsSyncing] = useState(false);
             
-            // Notification State (No-Alert Guardrail)
+            // Criptografía y Estados de Bóveda
+            const [vaultKey, setVaultKey] = useState('');
+            const [isVaultLocked, setIsVaultLocked] = useState(true);
+            const [vaultAuthDoc, setVaultAuthDoc] = useState(null);
+            const [inputKey, setInputKey] = useState('');
+            const [vaultError, setVaultError] = useState('');
+
+            // Notification State
             const [notificacion, setNotificacion] = useState({ show: false, mensaje: '', tipo: 'success' });
 
             // Refs para carga masiva
@@ -145,6 +171,11 @@
             const [showProductList, setShowProductList] = useState(false);
             const [showSubjectList, setShowSubjectList] = useState(false);
 
+            // Modal Cartera State
+            const [saldarModal, setSaldarModal] = useState({
+                show: false, venta: null, nuevoMetodo: 'Efectivo', montoEfectivo: '', fechaEfectiva: '', observacionCierre: ''
+            });
+
             // Management States
             const [newProduct, setNewProduct] = useState({ id: null, sku: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
             const [newSujeto, setNewSujeto] = useState({ id: null, nombre: '', tipo: 'Cliente', telefono: '' });
@@ -160,9 +191,17 @@
             useEffect(() => {
                 if (!user) return;
                 const unsubProd = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), (s) => setProductos(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-                const unsubVentas = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), (s) => setVentas(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0))));
+                const unsubVentas = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), (s) => setVentas(s.docs.map(d => ({ id: d.id, ...d.data() }))));
                 const unsubSujetos = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), (s) => setSujetos(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-                return () => { unsubProd(); unsubVentas(); unsubSujetos(); };
+                
+                // Suscribirse al documento de autenticación de bóveda
+                const unsubVaultAuth = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'vault_control'), (snap) => {
+                    const docAuth = snap.docs.find(d => d.id === 'auth');
+                    if (docAuth) setVaultAuthDoc({ id: docAuth.id, ...docAuth.data() });
+                    else setVaultAuthDoc(null);
+                });
+
+                return () => { unsubProd(); unsubVentas(); unsubSujetos(); unsubVaultAuth(); };
             }, [user]);
 
             // Toast Helper
@@ -171,7 +210,74 @@
                 setTimeout(() => setNotificacion({ show: false, mensaje: '', tipo: 'success' }), 4500);
             };
 
-            // --- CÁLCULOS CRÍTICOS ---
+            // --- DECRYPTION IN MEMORY (MAPEO DE SEGURIDAD) ---
+            const decryptedProductos = useMemo(() => {
+                if (isVaultLocked || !vaultKey) return [];
+                return productos.map(p => ({
+                    id: p.id,
+                    sku: p.sku,
+                    categoria: p.categoria,
+                    stockActual: p.stockActual,
+                    stockInicial: p.stockInicial,
+                    nombre: decryptVal(p.nombre, vaultKey),
+                    precioCosto: decryptVal(p.precioCosto, vaultKey, true),
+                    precioCliente: decryptVal(p.precioCliente, vaultKey, true),
+                    precioSocio: decryptVal(p.precioSocio, vaultKey, true)
+                }));
+            }, [productos, isVaultLocked, vaultKey]);
+
+            const decryptedVentas = useMemo(() => {
+                if (isVaultLocked || !vaultKey) return [];
+                return ventas.map(v => {
+                    let decItems = [];
+                    let decPagos = [];
+                    let decSplit = { ferco: 0, hades: 0 };
+                    
+                    try {
+                        const strItems = decryptVal(v.items, vaultKey);
+                        if (strItems) decItems = JSON.parse(strItems);
+                    } catch(e) {}
+                    
+                    try {
+                        const strPagos = decryptVal(v.pagos, vaultKey);
+                        if (strPagos) decPagos = JSON.parse(strPagos);
+                    } catch(e) {}
+
+                    try {
+                        const strSplit = decryptVal(v.split, vaultKey);
+                        if (strSplit) decSplit = JSON.parse(strSplit);
+                    } catch(e) {}
+
+                    return {
+                        id: v.id,
+                        entidad: v.entidad,
+                        canal: v.canal,
+                        estado: v.estado,
+                        cuentaDestino: v.cuentaDestino,
+                        timestamp: v.timestamp,
+                        fecha: v.fecha,
+                        hora: v.hora,
+                        nombreEntidad: decryptVal(v.nombreEntidad, vaultKey),
+                        responsable: decryptVal(v.responsable, vaultKey),
+                        totalVenta: decryptVal(v.totalVenta, vaultKey, true),
+                        items: decItems,
+                        pagos: decPagos,
+                        split: decSplit
+                    };
+                }).sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
+            }, [ventas, isVaultLocked, vaultKey]);
+
+            const decryptedSujetos = useMemo(() => {
+                if (isVaultLocked || !vaultKey) return [];
+                return sujetos.map(s => ({
+                    id: s.id,
+                    tipo: s.tipo,
+                    nombre: decryptVal(s.nombre, vaultKey),
+                    telefono: decryptVal(s.telefono, vaultKey)
+                }));
+            }, [sujetos, isVaultLocked, vaultKey]);
+
+            // --- CÁLCULOS CRÍTICOS (SOBRE MEMORIA DESCIFRADA) ---
             const totalOp = useMemo(() => {
                 const sub = carrito.reduce((s, i) => s + (parseFloat(i.cantidad) * i.fraccion * parseFloat(i.valorUnitario) || 0), 0);
                 const desc = (datosVenta.entidad === 'Cliente' && datosVenta.aplicarDescuento) ? (parseFloat(datosVenta.valorDescuento) || 0) : 0;
@@ -185,7 +291,7 @@
                 if (datosVenta.canal !== 'Hades' || carrito.length === 0) return { ferco: 0, hades: 0 };
                 let fercoShare = 0; let hadesShare = 0;
                 carrito.forEach(it => {
-                    const p = productos.find(x => x.id === it.productoId);
+                    const p = decryptedProductos.find(x => x.id === it.productoId);
                     const costoSocioTotal = (p?.precioSocio || 0) * it.cantidad * it.fraccion;
                     const ventaTotalHades = it.valorUnitario * it.cantidad * it.fraccion;
                     fercoShare += costoSocioTotal;
@@ -193,22 +299,22 @@
                 });
                 const dom = datosVenta.entregaDomicilio ? (parseFloat(datosVenta.valorDomicilio) || 0) : 0;
                 return { ferco: fercoShare + dom, hades: hadesShare };
-            }, [carrito, datosVenta, productos]);
+            }, [carrito, datosVenta, decryptedProductos]);
 
             const metrics = useMemo(() => {
-                const res = ventas.reduce((acc, v) => {
+                const res = decryptedVentas.reduce((acc, v) => {
                     const val = parseFloat(v.totalVenta) || 0;
                     if (v.entidad === 'Cliente') acc.cli += val;
                     else if (v.entidad === 'Distribuidor') acc.dist += val;
                     else if (v.entidad === 'Proveedor') acc.prov += val;
                     return acc;
                 }, { cli: 0, dist: 0, prov: 0 });
-                const valorBodega = productos.reduce((s,p) => s + ((parseFloat(p.stockActual) || 0) * (parseFloat(p.precioCosto) || 0)), 0);
+                const valorBodega = decryptedProductos.reduce((s,p) => s + ((parseFloat(p.stockActual) || 0) * (parseFloat(p.precioCosto) || 0)), 0);
                 return { ...res, valorBodega };
-            }, [ventas, productos]);
+            }, [decryptedVentas, decryptedProductos]);
 
             const rankingClientes = useMemo(() => {
-                const stats = ventas.filter(v => v.entidad === 'Cliente' && v.nombreEntidad).reduce((acc, v) => {
+                const stats = decryptedVentas.filter(v => v.entidad === 'Cliente' && v.nombreEntidad).reduce((acc, v) => {
                     const id = v.nombreEntidad.toUpperCase();
                     if (!acc[id]) acc[id] = { nombre: v.nombreEntidad, count: 0, total: 0 };
                     acc[id].count += 1;
@@ -216,13 +322,42 @@
                     return acc;
                 }, {});
                 return Object.values(stats).sort((a,b) => b.total - a.total).slice(0, 5);
-            }, [ventas]);
+            }, [decryptedVentas]);
+
+            // --- UNLOCK VAULT PROTOCOL ---
+            const handleUnlockVault = (e) => {
+                e.preventDefault();
+                if (!inputKey) return;
+
+                if (!vaultAuthDoc) {
+                    // Primer Inicio: Establecer Clave Maestra
+                    const verificationToken = encryptVal("FERCO_VAULT_ACTIVE", inputKey);
+                    setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vault_control', 'auth'), {
+                        token: verificationToken
+                    }).then(() => {
+                        setVaultKey(inputKey);
+                        setIsVaultLocked(false);
+                        mostrarNotificacion("Bóveda Criptográfica Establecida y Desbloqueada.");
+                    });
+                } else {
+                    // Validar Clave
+                    const decryptedCheck = decryptVal(vaultAuthDoc.token, inputKey);
+                    if (decryptedCheck === 'FERCO_VAULT_ACTIVE') {
+                        setVaultKey(inputKey);
+                        setIsVaultLocked(false);
+                        setVaultError('');
+                        mostrarNotificacion("Bóveda Criptográfica Abierta.");
+                    } else {
+                        setVaultError("⚠️ Clave Incorrecta. Los datos permanecen cifrados.");
+                    }
+                }
+            };
 
             // --- LÓGICA DE INTERFAZ ---
             const getNextSKU = (cat, tempProductosList) => {
                 const prefixMap = { 'Producto Final': 'PFNASA-', 'Insumo': 'INASA-', 'Empaque': 'ENASA-' };
                 const prefix = prefixMap[cat] || 'PFNASA-';
-                const listToScan = tempProductosList || productos;
+                const listToScan = tempProductosList || decryptedProductos;
                 const nums = listToScan.filter(p => p.sku?.startsWith(prefix)).map(p => {
                     const m = p.sku.match(/\d+/);
                     return m ? parseInt(m[0]) : 0;
@@ -250,15 +385,27 @@
                 if (carrito.length === 0 || (totalAbonado < totalOp && datosVenta.entidad !== 'Proveedor')) return;
                 try {
                     const ahora = new Date();
+                    // Inyectar datos encriptados a la base de datos cloud
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), {
-                        ...datosVenta, items: carrito, pagos, totalVenta: totalOp, split: hadesSplit,
-                        timestamp: Date.now(), fecha: ahora.toLocaleDateString(), hora: ahora.toLocaleTimeString(),
-                        auditLog: `OP: ${datosVenta.responsable} | CANAL: ${datosVenta.canal}`
+                        entidad: datosVenta.entidad,
+                        canal: datosVenta.canal,
+                        estado: 'Pendiente',
+                        cuentaDestino: datosVenta.cuentaDestino,
+                        timestamp: Date.now(),
+                        fecha: ahora.toLocaleDateString(),
+                        hora: ahora.toLocaleTimeString(),
+                        nombreEntidad: encryptVal(datosVenta.nombreEntidad, vaultKey),
+                        responsable: encryptVal(datosVenta.responsable, vaultKey),
+                        totalVenta: encryptVal(totalOp, vaultKey),
+                        items: encryptVal(JSON.stringify(carrito), vaultKey),
+                        pagos: encryptVal(JSON.stringify(pagos), vaultKey),
+                        split: encryptVal(JSON.stringify(hadesSplit), vaultKey)
                     });
+
                     if (datosVenta.descontarStockHades || datosVenta.canal === 'Ferco Farma') {
                         for (const it of carrito) {
                             const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'productos', it.productoId);
-                            const pData = productos.find(x => x.id === it.productoId);
+                            const pData = decryptedProductos.find(x => x.id === it.productoId);
                             if (pData) {
                                 const stockPrev = parseFloat(pData.stockActual) || 0;
                                 const cambio = parseFloat(it.cantidad) * it.fraccion;
@@ -273,28 +420,65 @@
                 } catch (err) { mostrarNotificacion("Falla de sincronización.", "error"); }
             };
 
+            // --- FUNCIÓN PARA SALDAR DESPACHO DESDE CARTERA ---
+            const ejecutarSaldadoDespacho = async (e) => {
+                e.preventDefault();
+                const { venta, nuevoMetodo, montoEfectivo, fechaEfectiva, observacionCierre } = saldarModal;
+                if (!venta) return;
+
+                try {
+                    const pagosActualizados = (venta.pagos || []).map(p => {
+                        if (['Crédito', 'Cruce', 'Artículo en Garantía'].includes(p.metodo)) {
+                            return {
+                                ...p,
+                                metodo: nuevoMetodo,
+                                monto: parseFloat(montoEfectivo) || p.monto,
+                                fechaRecaudo: fechaEfectiva,
+                                comentario: `${p.comentario || ''} | LIQUIDADO ${fechaEfectiva}: ${observacionCierre}`.trim()
+                            };
+                        }
+                        return p;
+                    });
+
+                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'ventas', venta.id);
+                    await updateDoc(ref, {
+                        estado: 'Pagado',
+                        pagos: encryptVal(JSON.stringify(pagosActualizados), vaultKey),
+                        auditLog: `${venta.auditLog || ''} | SALDADO el ${new Date().toLocaleDateString()} por ${datosVenta.responsable}`
+                    });
+
+                    setSaldarModal({ show: false, venta: null, nuevoMetodo: 'Efectivo', montoEfectivo: '', fechaEfectiva: '', observacionCierre: '' });
+                    mostrarNotificacion(`Despacho de ${venta.nombreEntidad} saldado correctamente.`);
+                } catch (err) {
+                    mostrarNotificacion("Falla al liquidar la deuda en la base de datos.", "error");
+                }
+            };
+
             const upsertProd = async (e) => {
                 e.preventDefault();
                 const skuF = newProduct.sku.trim() || getNextSKU(newProduct.categoria);
-                const data = { 
-                    sku: skuF, nombre: newProduct.nombre.toUpperCase(), 
-                    precioCosto: parseFloat(newProduct.precioCosto) || 0,
-                    precioCliente: newProduct.categoria === 'Empaque' ? 0 : parseFloat(newProduct.precioCliente) || 0,
-                    precioSocio: parseFloat(newProduct.precioSocio) || 0,
-                    stockActual: parseFloat(newProduct.stockInicial) || 0, stockInicial: parseFloat(newProduct.stockInicial) || 0, 
-                    categoria: newProduct.categoria, timestamp: Date.now()
+                const encryptedData = { 
+                    sku: skuF, 
+                    categoria: newProduct.categoria, 
+                    nombre: encryptVal(newProduct.nombre.toUpperCase(), vaultKey), 
+                    precioCosto: encryptVal(newProduct.precioCosto, vaultKey),
+                    precioCliente: newProduct.categoria === 'Empaque' ? encryptVal(0, vaultKey) : encryptVal(newProduct.precioCliente, vaultKey),
+                    precioSocio: encryptVal(newProduct.precioSocio, vaultKey),
+                    stockActual: parseFloat(newProduct.stockInicial) || 0, 
+                    stockInicial: parseFloat(newProduct.stockInicial) || 0, 
+                    timestamp: Date.now()
                 };
                 if (newProduct.id) {
-                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', newProduct.id), data);
+                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', newProduct.id), encryptedData);
                     mostrarNotificacion(`Producto ${skuF} actualizado con éxito.`);
                 } else {
-                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), data);
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), encryptedData);
                     mostrarNotificacion(`Producto ${skuF} inyectado al catálogo cloud.`);
                 }
                 setNewProduct({ id: null, sku: '', text: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
             };
 
-            // --- MOTOR DE CARGA MASIVA OPTIMIZADO ---
+            // --- MOTOR DE CARGA MASIVA ENCRIPTADA ---
             const uploadExcel = async (e, type) => {
                 const file = e.target.files[0];
                 if (!file) return;
@@ -307,9 +491,8 @@
                         const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
                         
                         if (type === 'INVENTARIO') {
-                            let currentProductsInBatch = [...productos];
-                            let creados = 0;
-                            let actualizados = 0;
+                            let currentProductsInBatch = [...decryptedProductos];
+                            let creados = 0; let actualizados = 0;
 
                             for (const row of data) {
                                 let skuE = String(row.SKU || "").trim().toUpperCase();
@@ -322,26 +505,19 @@
                                 const exist = currentProductsInBatch.find(p => p.sku.toUpperCase() === skuE);
                                 const parsedStock = parseFloat(row.Stock) || 0;
                                 const prodData = {
-                                    sku: skuE,
-                                    nombre: String(row.Nombre || "PRODUCTO MASIVO").toUpperCase(),
+                                    sku: skuE, 
                                     categoria: cat,
-                                    precioCosto: parseFloat(row.Costo) || 0,
-                                    precioCliente: parseFloat(row.Precio_Cliente) || 0,
-                                    precioSocio: parseFloat(row.Precio_Socio) || 0,
-                                    stockActual: parsedStock,
-                                    stockInicial: parsedStock,
+                                    nombre: encryptVal(String(row.Nombre || "PRODUCTO MASIVO").toUpperCase(), vaultKey),
+                                    precioCosto: encryptVal(parseFloat(row.Costo) || 0, vaultKey),
+                                    precioCliente: encryptVal(parseFloat(row.Precio_Cliente) || 0, vaultKey),
+                                    precioSocio: encryptVal(parseFloat(row.Precio_Socio) || 0, vaultKey),
+                                    stockActual: parsedStock, 
+                                    stockInicial: parsedStock, 
                                     timestamp: Date.now()
                                 };
 
                                 if (exist) {
-                                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', exist.id), { 
-                                        stockActual: parsedStock, 
-                                        precioCosto: prodData.precioCosto,
-                                        precioCliente: prodData.precioCliente,
-                                        precioSocio: prodData.precioSocio,
-                                        categoria: cat,
-                                        nombre: prodData.nombre
-                                    });
+                                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', exist.id), prodData);
                                     actualizados++;
                                 } else {
                                     const docRef = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), prodData);
@@ -355,7 +531,10 @@
                             for (const row of data) {
                                 if (row.Nombre) {
                                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), {
-                                        nombre: row.Nombre.toUpperCase(), tipo: row.Tipo || 'Cliente', telefono: row.Telefono || '', timestamp: Date.now()
+                                        nombre: encryptVal(row.Nombre.toUpperCase(), vaultKey), 
+                                        tipo: row.Tipo || 'Cliente', 
+                                        telefono: encryptVal(row.Telefono || '', vaultKey), 
+                                        timestamp: Date.now()
                                     });
                                     creados++;
                                 }
@@ -364,15 +543,26 @@
                         } else if (type === 'DESPACHOS') {
                             let creados = 0;
                             for (const row of data) {
-                                const p = productos.find(x => x.sku === row.SKU);
+                                const p = decryptedProductos.find(x => x.sku === row.SKU);
                                 if (p && row.Sujeto) {
+                                    const mockItems = [{ productoId: p.id, sku: p.sku, nombre: p.nombre, cantidad: row.Cantidad || 1, valorUnitario: row.Valor_Uni || 0, fraccion: 1 }];
+                                    const mockPagos = [{ metodo: row.Metodo || 'Efectivo', monto: row.Total || 0, comentario: row.Obs || '' }];
+                                    const mockSplit = { ferco: (p.precioSocio || 0) * (row.Cantidad || 1), hades: ((row.Valor_Uni || 0) - (p.precioSocio || 0)) * (row.Cantidad || 1) };
+                                    
                                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), {
                                         cuentaDestino: row.Cuenta_Ingreso || 'CRIS',
-                                        entidad: row.Tipo_Sujeto || 'Cliente', nombreEntidad: row.Sujeto.toUpperCase(), canal: row.Canal || 'Ferco Farma',
-                                        totalVenta: parseFloat(row.Total) || 0, items: [{ productoId: p.id, sku: p.sku, nombre: p.nombre, cantidad: row.Cantidad || 1, valorUnitario: row.Valor_Uni || 0, fraccion: 1 }],
-                                        pagos: [{ metodo: row.Metodo || 'Efectivo', monto: row.Total || 0, comentario: row.Obs || '' }],
-                                        fecha: row.Fecha || new Date().toLocaleDateString(), hora: row.Hora || new Date().toLocaleTimeString(),
-                                        responsable: 'CARGA_MASIVA', timestamp: Date.now()
+                                        entidad: row.Tipo_Sujeto || 'Cliente', 
+                                        canal: row.Canal || 'Ferco Farma',
+                                        fecha: row.Fecha || new Date().toLocaleDateString(), 
+                                        hora: row.Hora || new Date().toLocaleTimeString(),
+                                        responsable: encryptVal('CARGA_MASIVA', vaultKey), 
+                                        timestamp: Date.now(),
+                                        estado: row.Estado || 'Pagado',
+                                        nombreEntidad: encryptVal(row.Sujeto.toUpperCase(), vaultKey), 
+                                        totalVenta: encryptVal(parseFloat(row.Total) || 0, vaultKey), 
+                                        items: encryptVal(JSON.stringify(mockItems), vaultKey),
+                                        pagos: encryptVal(JSON.stringify(mockPagos), vaultKey),
+                                        split: encryptVal(JSON.stringify(mockSplit), vaultKey)
                                     });
                                     const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'productos', p.id);
                                     await updateDoc(pRef, { stockActual: (parseFloat(p.stockActual) || 0) - (parseFloat(row.Cantidad) || 0) });
@@ -391,7 +581,7 @@
                 let data = [];
                 if (type === 'INVENTARIO') data = [{ SKU: "", Nombre: "ACETAMINOFEN", Categoria: "Producto Final", Costo: 1000, Precio_Cliente: 1500, Precio_Socio: 1200, Stock: 50 }];
                 if (type === 'SUJETOS') data = [{ Nombre: "JUAN PEREZ", Tipo: "Cliente", Telefono: "300123456" }];
-                if (type === 'DESPACHOS') data = [{ Fecha: "15/05/2026", Hora: "09:00:00", Sujeto: "JUAN PEREZ", Tipo_Sujeto: "Cliente", Canal: "Ferco Farma", SKU: "PFNASA-001", Cantidad: 1, Valor_Uni: 1500, Total: 1500, Metodo: "Efectivo", Obs: "Carga de Saldos", Cuenta_Ingreso: "CRIS" }];
+                if (type === 'DESPACHOS') data = [{ Fecha: "15/05/2026", Hora: "09:00:00", Sujeto: "JUAN PEREZ", Tipo_Sujeto: "Cliente", Canal: "Ferco Farma", SKU: "PFNASA-001", Cantidad: 1, Valor_Uni: 1500, Total: 1500, Metodo: "Efectivo", Obs: "Carga de Saldos", Cuenta_Ingreso: "CRIS", Estado: "Pendiente" }];
                 
                 const ws = XLSX.utils.json_to_sheet(data);
                 const wb = XLSX.utils.book_new();
@@ -399,15 +589,14 @@
                 XLSX.writeFile(wb, `PLANTILLA_${type}.xlsx`);
             };
 
-            // Función puente alias para descargar plantilla
             const exportarPlantilla = () => {
                 downloadTemplate('INVENTARIO');
             };
 
             const exportarVentas = () => {
-                const ws = XLSX.utils.json_to_sheet(ventas.map(v => ({
+                const ws = XLSX.utils.json_to_sheet(decryptedVentas.map(v => ({
                     ID: v.id, FECHA: v.fecha, HORA: v.hora, CANAL: v.canal, TIPO: v.entidad, SUJETO: v.nombreEntidad,
-                    CUENTA_INGRESO: v.cuentaDestino || 'CRIS',
+                    CUENTA_INGRESO: v.cuentaDestino || 'CRIS', STATUS: v.estado,
                     VALOR_FERCO: v.split?.ferco || v.totalVenta, VALOR_HADES: v.split?.hades || 0, TOTAL: v.totalVenta,
                     AUDIT: v.auditLog
                 })));
@@ -415,13 +604,63 @@
                 XLSX.writeFile(wb, `FERCO_FINANCE_REPORT_${Date.now()}.xlsx`);
             };
 
-            // --- REGLA: Sincronización Correcta de Iconos en Cambios de Estado ---
+            // Sincronización de Iconos Lucide
             useEffect(() => { 
                 if (!loading && window.lucide) window.lucide.createIcons(); 
-            }, [loading, view, productos, ventas, carrito, datosVenta, sujetos, pagos, metodoActual, newProduct, newSujeto, showProductList, showSubjectList]);
+            }, [loading, view, productos, ventas, carrito, datosVenta, sujetos, pagos, metodoActual, newProduct, newSujeto, showProductList, showSubjectList, saldarModal, isVaultLocked]);
 
-            if (loading) return <div className="flex h-screen items-center justify-center bg-[#020206] text-space-purple font-black animate-pulse uppercase tracking-[0.5em]">Central FERCO FARMA Activo...</div>;
+            if (loading) return (
+                <div className="flex h-screen items-center justify-center bg-[#020206] text-space-purple font-black animate-pulse uppercase tracking-[0.5em]">
+                    Central FERCO FARMA Activo...
+                </div>
+            );
 
+            // --- RENDER DE BOQUEO: PORTAL DE ACCESO CRIPTOGRÁFICO ---
+            if (isVaultLocked) {
+                return (
+                    <div className="flex h-screen items-center justify-center bg-[#020206] p-4 text-white font-sans relative">
+                        <div className="scanline"></div>
+                        <div className="glass-panel max-w-md w-full p-8 space-y-6 border border-[#9333ea]/30 shadow-[0_0_50px_rgba(147,51,234,0.15)] text-center">
+                            <div className="flex justify-center mb-2">
+                                <div className="p-4 bg-space-purple/10 rounded-full border border-space-purple/20 animate-pulse">
+                                    <i data-lucide="shield-alert" className="w-12 h-12 text-space-purple"></i>
+                                </div>
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-black italic tracking-tighter uppercase text-white">
+                                    {!vaultAuthDoc ? "ESTABLECER BÓVEDA" : "BÓVEDA CRIPTOGRÁFICA"}
+                                </h2>
+                                <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mt-1">
+                                    {!vaultAuthDoc 
+                                        ? "Configure su clave de encriptación local AES-256" 
+                                        : "Los datos de la bodega permanecen blindados en Google Cloud"}
+                                </p>
+                            </div>
+                            <form onSubmit={handleUnlockVault} className="space-y-4">
+                                <div>
+                                    <input 
+                                        type="password" 
+                                        value={inputKey}
+                                        onChange={e => setInputKey(e.target.value)}
+                                        placeholder="CLAVE MAESTRA..." 
+                                        className="w-full p-4 bg-black/60 rounded-xl text-sm font-black border border-white/10 text-center tracking-widest text-[#39ff14] placeholder-slate-700 outline-none focus:border-space-purple"
+                                        required
+                                    />
+                                </div>
+                                {vaultError && <p className="text-[10px] text-red-500 font-black uppercase tracking-tight">{vaultError}</p>}
+                                <button type="submit" className="btn-primary-nasa font-black tracking-widest text-xs uppercase italic">
+                                    {!vaultAuthDoc ? "Establecer y Desbloquear" : "Desbloquear Bóveda"}
+                                </button>
+                            </form>
+                            <p className="text-[8px] text-slate-600 uppercase font-black leading-relaxed">
+                                ATENCIÓN: El ERP cifra los datos en su navegador antes de subirlos a internet. Ningún servidor ni base de datos externa almacena su clave en texto plano.
+                            </p>
+                        </div>
+                    </div>
+                );
+            }
+
+            // --- VISTA DE PRODUCCIÓN (BÓVEDA DESBLOQUEADA) ---
             return (
                 <div className="max-w-[1600px] mx-auto p-4 md:p-6 lg:p-8">
                     {/* Notification Toast */}
@@ -432,13 +671,91 @@
                         </div>
                     )}
 
+                    {/* Modal de Cartera */}
+                    {saldarModal.show && (
+                        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+                            <div className="glass-panel max-w-lg w-full p-6 space-y-5 border border-hades-gold/30 shadow-2xl">
+                                <div className="flex justify-between items-center border-b border-white/5 pb-3">
+                                    <h3 className="text-sm font-black text-hades-gold uppercase tracking-widest flex items-center gap-2">
+                                        <i data-lucide="check-check"></i> Liquidar Compromiso de Pago
+                                    </h3>
+                                    <button onClick={() => setSaldarModal({ show: false, venta: null })} className="text-slate-500 hover:text-white">
+                                        <i data-lucide="x" className="w-5 h-5"></i>
+                                    </button>
+                                </div>
+                                <div className="text-xs space-y-2 bg-black/40 p-4 rounded-xl border border-white/5">
+                                    <p><span className="opacity-50 uppercase">Sujeto:</span> <strong className="text-white">{saldarModal.venta?.nombreEntidad}</strong></p>
+                                    <p><span className="opacity-50 uppercase">Monto Pendiente:</span> <strong className="text-cyber-green text-sm">${saldarModal.venta?.totalVenta?.toLocaleString()}</strong></p>
+                                    <p><span className="opacity-50 uppercase">Compromisos Iniciales:</span></p>
+                                    <div className="pl-4 border-l border-hades-gold/30 space-y-1">
+                                        {saldarModal.venta?.pagos?.map((p, idx) => (
+                                            <p key={idx} className="text-[10px] text-slate-300">
+                                                [{p.metodo}] - ${p.monto?.toLocaleString()} {p.fechaPago ? `(Vence: ${p.fechaPago})` : ''} {p.comentario ? `[Obs: ${p.comentario}]` : ''}
+                                            </p>
+                                        ))}
+                                    </div>
+                                </div>
+                                <form onSubmit={ejecutarSaldadoDespacho} className="space-y-4">
+                                    <div>
+                                        <label className="text-[9px] uppercase font-black text-slate-500">Nuevo Medio de Pago Liquidado</label>
+                                        <select 
+                                            value={saldarModal.nuevoMetodo} 
+                                            onChange={e => setSaldarModal({ ...saldarModal, nuevoMetodo: e.target.value })}
+                                            className="w-full mt-1.5 p-3 bg-[#1a1a24] border border-white/5 rounded-xl text-xs text-white outline-none focus:border-hades-gold font-bold"
+                                        >
+                                            <option value="Efectivo">Efectivo</option>
+                                            <option value="Transferencia">Transferencia</option>
+                                            <option value="Datáfono">Datáfono</option>
+                                        </select>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="text-[9px] uppercase font-black text-slate-500">Monto Recibido $</label>
+                                            <input 
+                                                type="number" 
+                                                value={saldarModal.montoEfectivo} 
+                                                onChange={e => setSaldarModal({ ...saldarModal, montoEfectivo: e.target.value })}
+                                                className="w-full mt-1.5 p-3 bg-[#1a1a24] border border-white/5 rounded-xl text-xs text-cyber-green outline-none focus:border-cyber-green font-black"
+                                                required 
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[9px] uppercase font-black text-slate-500">Fecha de Liquidación</label>
+                                            <input 
+                                                type="date" 
+                                                value={saldarModal.fechaEfectiva} 
+                                                onChange={e => setSaldarModal({ ...saldarModal, fechaEfectiva: e.target.value })}
+                                                className="w-full mt-1.5 p-3 bg-[#1a1a24] border border-white/5 rounded-xl text-xs text-white outline-none focus:border-hades-gold font-bold"
+                                                required 
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-[9px] uppercase font-black text-slate-500">Observación de Cierre (Auditoría)</label>
+                                        <textarea 
+                                            value={saldarModal.observacionCierre} 
+                                            onChange={e => setSaldarModal({ ...saldarModal, observacionCierre: e.target.value })}
+                                            placeholder="Detalle sobre el recaudo (Ej. Recibido por Cris en cuenta Bancolombia)"
+                                            className="w-full mt-1.5 p-3 bg-[#1a1a24] border border-white/5 rounded-xl text-xs text-white outline-none focus:border-hades-gold h-16 resize-none font-bold"
+                                            required
+                                        ></textarea>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3 pt-2">
+                                        <button type="button" onClick={() => setSaldarModal({ show: false, venta: null })} className="py-3 bg-slate-800 rounded-xl text-xs font-black uppercase text-slate-400 hover:bg-slate-700 transition-all italic font-black">Cancelar</button>
+                                        <button type="submit" className="py-3 bg-hades-gold text-black rounded-xl text-xs font-black uppercase shadow-lg shadow-hades-gold/20 hover:scale-105 transition-all italic font-black">¡Saldar Despacho!</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Header Principal */}
                     <header className="flex flex-col lg:flex-row justify-between items-center mb-8 gap-6 border-b border-white/5 pb-6">
                         <div className="flex items-center gap-4 text-white">
                             <img src="logo.jpg" alt="L" className="w-12 h-12 rounded-xl shadow-xl border border-white/10" />
                             <div>
                                 <h1 className="text-3xl font-black italic tracking-tighter uppercase">FERCO <span className="text-space-orange">FARMA</span></h1>
-                                <p className="text-[7px] uppercase tracking-[0.5em] font-black text-space-purple opacity-60">REGISTROS DE BODEGA v17.4</p>
+                                <p className="text-[7px] uppercase tracking-[0.5em] font-black text-space-purple opacity-60">REGISTROS DE BODEGA v18.0</p>
                             </div>
                         </div>
                         <nav className="flex flex-wrap gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
@@ -446,7 +763,10 @@
                                 <button key={v} onClick={() => setView(v)} className={`px-5 py-2 rounded-lg font-black text-[9px] uppercase transition-all ${view===v?'bg-white text-black shadow-xl':'text-slate-500 hover:text-white'}`}>{v.toUpperCase()}</button>
                             ))}
                         </nav>
-                        <button onClick={exportarVentas} className="px-5 py-2.5 rounded-lg bg-cyber-green text-black font-black text-[10px] uppercase hover:scale-105 transition-all flex items-center gap-2 shadow-lg italic font-black"><i data-lucide="download-cloud"></i> INFORME</button>
+                        <div className="flex gap-2">
+                            <button onClick={() => { setIsVaultLocked(true); setVaultKey(''); }} className="px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 font-black text-[9px] uppercase hover:bg-red-500 hover:text-white transition-all"><i data-lucide="lock" className="w-3.5 h-3.5 inline mr-1"></i> Cerrar Bóveda</button>
+                            <button onClick={exportarVentas} className="px-5 py-2.5 rounded-lg bg-cyber-green text-black font-black text-[10px] uppercase hover:scale-105 transition-all flex items-center gap-2 shadow-lg italic font-black"><i data-lucide="download-cloud"></i> INFORME</button>
+                        </div>
                     </header>
 
                     {view === 'dashboard' ? (
@@ -510,7 +830,7 @@
                                         />
                                         {showSubjectList && (
                                             <div className="selectable-list text-white">
-                                                {sujetos.filter(s => s.tipo === datosVenta.entidad && s.nombre.toLowerCase().includes(datosVenta.nombreEntidad.toLowerCase())).map(s => (
+                                                {decryptedSujetos.filter(s => s.tipo === datosVenta.entidad && s.nombre.toLowerCase().includes(datosVenta.nombreEntidad.toLowerCase())).map(s => (
                                                     <div key={s.id} onClick={() => selectSubject(s)} className="selectable-item">{s.nombre}</div>
                                                 ))}
                                                 <div onClick={()=>setShowSubjectList(false)} className="p-2 text-[7px] text-center text-red-500 uppercase cursor-pointer">Cerrar Lista</div>
@@ -531,7 +851,7 @@
                                             />
                                             {showProductList && (
                                                 <div className="selectable-list">
-                                                    {productos.filter(p => p.sku.toLowerCase().includes(itemActual.sku.toLowerCase()) || p.nombre.toLowerCase().includes(itemActual.sku.toLowerCase())).map(p => (
+                                                    {decryptedProductos.filter(p => p.sku.toLowerCase().includes(itemActual.sku.toLowerCase()) || p.nombre.toLowerCase().includes(itemActual.sku.toLowerCase())).map(p => (
                                                         <div key={p.id} onClick={() => selectProduct(p)} className="selectable-item">{p.sku} - {p.nombre}</div>
                                                     ))}
                                                     <div onClick={()=>setShowProductList(false)} className="p-2 text-[7px] text-center text-red-500 uppercase cursor-pointer">Cerrar Lista</div>
@@ -556,7 +876,7 @@
                                     </div>
 
                                     {datosVenta.canal === 'Hades' && carrito.length > 0 && (
-                                        <div className="p-4 hades-card rounded-2xl space-y-2 animate-in slide-in-from-top-2 shadow-2xl">
+                                        <div className="p-4 hades-card rounded-2xl space-y-2 animate-in slide-in-from-top-2 shadow-2xl text-white">
                                             <div className="flex justify-between text-[9px] font-black uppercase text-slate-400"><span>Base FERCO FARMA (Costo Socio + Domi):</span><span className="text-cyber-green">${hadesSplit.ferco.toLocaleString()}</span></div>
                                             <div className="flex justify-between text-[9px] font-black uppercase border-t border-white/5 pt-2 text-hades-gold"><span>Utilidad Neta HADES:</span><span>${hadesSplit.hades.toLocaleString()}</span></div>
                                         </div>
@@ -674,12 +994,37 @@
                                         <table className="w-full text-left text-[9px] text-white">
                                             <thead className="bg-[#101018] text-slate-500 uppercase font-black sticky top-0 text-white"><tr><th className="p-5 py-4">TimeStamp</th><th className="p-5 py-4">Sujeto</th><th className="p-5 py-4 text-center">Total</th><th className="p-5 py-4 text-right">Acción</th></tr></thead>
                                             <tbody className="divide-y divide-white/5">
-                                                {ventas.map(v => (
+                                                {decryptedVentas.map(v => (
                                                     <tr key={v.id} className="hover:bg-white/5 transition-all border-l-4 border-l-transparent hover:border-l-space-purple">
-                                                        <td className="p-5 opacity-40 uppercase font-black text-[8px] leading-tight text-white">{v.hora}<br/>{v.fecha}<br/><span className="text-space-orange font-bold">{v.canal}</span><br/><span className="text-[#39ff14] font-black">CTA: {v.cuentaDestino || 'CRIS'}</span></td>
+                                                        <td className="p-5 opacity-40 uppercase font-black text-[8px] leading-tight text-white">
+                                                            {v.hora}<br/>{v.fecha}<br/>
+                                                            <span className="text-space-orange font-bold">{v.canal}</span><br/>
+                                                            <span className="text-[#39ff14] font-black">CTA: {v.cuentaDestino || 'CRIS'}</span>
+                                                        </td>
                                                         <td className="p-5 font-black uppercase truncate max-w-[140px]">{v.nombreEntidad}</td>
-                                                        <td className="p-5 text-center font-black text-cyber-green italic text-sm text-white">${(v.totalVenta || 0).toLocaleString()}</td>
-                                                        <td className="p-5 text-right"><button onClick={async ()=>{ if(confirm('¿Anular registro?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', v.id)); }} className="text-slate-800 hover:text-red-500 p-2 hover:scale-125 transition-transform"><i data-lucide="trash-2" className="w-4 h-4"></i></button></td>
+                                                        <td className="p-5 text-center font-black text-cyber-green italic text-sm text-white">
+                                                            ${(v.totalVenta || 0).toLocaleString()}
+                                                        </td>
+                                                        <td className="p-5 text-right flex justify-end gap-2 items-center">
+                                                            {/* Botón "Saldar" que aparece si la venta está en estado 'Pendiente' */}
+                                                            {v.estado === 'Pendiente' && (
+                                                                <button 
+                                                                    onClick={() => setSaldarModal({
+                                                                        show: true,
+                                                                        venta: v,
+                                                                        nuevoMetodo: 'Efectivo',
+                                                                        montoEfectivo: v.totalVenta || 0,
+                                                                        fechaEfectiva: new Date().toISOString().split('T')[0],
+                                                                        observacionCierre: 'Saldado en mostrador'
+                                                                    })}
+                                                                    className="px-2.5 py-1.5 bg-hades-gold/20 text-hades-gold border border-hades-gold/30 rounded-lg text-[8px] font-black uppercase hover:bg-hades-gold hover:text-black transition-all"
+                                                                    title="Saldar Cartera"
+                                                                >
+                                                                    Saldar
+                                                                </button>
+                                                            )}
+                                                            <button onClick={async ()=>{ if(confirm('¿Anular registro?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', v.id)); }} className="text-slate-800 hover:text-red-500 p-2 hover:scale-125 transition-transform"><i data-lucide="trash-2" className="w-4 h-4"></i></button>
+                                                        </td>
                                                     </tr>
                                                 ))}
                                             </tbody>
@@ -692,7 +1037,6 @@
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-500 text-white">
                             <div className="lg:col-span-4 space-y-6 text-white text-white">
                                 <div className="glass-panel p-6 border-space-orange/30 shadow-xl text-white">
-                                    {/* REQUERIMIENTO: Título dinámico que indica si es ingreso o edición */}
                                     <h2 className="text-[10px] font-black mb-6 uppercase text-space-orange italic border-l-4 border-space-purple pl-3">
                                         {newProduct.id ? 'MODIFICAR PRODUCTO' : 'INGRESAR A INVENTARIO'}
                                     </h2>
@@ -704,7 +1048,7 @@
                                         </div>
                                         <div className="relative text-white">
                                             <input list="mSkus" value={newProduct.sku} onChange={e=>setNewProduct({...newProduct, sku:e.target.value})} placeholder="SKU (AUTO-CONSECUTIVO)" className="w-full p-3 bg-black/60 rounded-xl text-xs border border-white/10 text-white font-bold uppercase focus:border-white shadow-inner" />
-                                            <datalist id="mSkus">{productos.map(p => <option key={p.id} value={p.sku}>{p.nombre}</option>)}</datalist>
+                                            <datalist id="mSkus">{decryptedProductos.map(p => <option key={p.id} value={p.sku}>{p.nombre}</option>)}</datalist>
                                         </div>
                                         <input value={newProduct.nombre} onChange={e=>setNewProduct({...newProduct, nombre:e.target.value})} placeholder="PRODUCTO" className="w-full p-3 bg-black/60 rounded-xl text-xs border border-white/10 font-black uppercase focus:border-white shadow-inner text-white shadow-inner" required />
                                         <div className="space-y-2 bg-white/5 p-4 rounded-2xl border border-white/10 shadow-inner">
@@ -720,7 +1064,7 @@
                                             {newProduct.id ? 'ACTUALIZAR DATOS' : 'ACTUALIZAR STOCK'}
                                         </button>
                                         
-                                        {/* REQUERIMIENTO: Botón para Cancelar Edición si está activo */}
+                                        {/* Cancelar Edición */}
                                         {newProduct.id && (
                                             <button 
                                                 type="button" 
@@ -746,19 +1090,18 @@
                                     <div key={cat} className="glass-panel overflow-hidden border-white/5 mb-6 shadow-xl text-white">
                                         <div className="p-4 bg-white/5 font-black uppercase text-[10px] border-b border-white/5 flex justify-between text-white">
                                             <span>Master Feed: {cat}</span>
-                                            <span className="text-space-purple opacity-40 font-mono">{productos.filter(p=>p.categoria===cat).length} Items</span>
+                                            <span className="text-space-purple opacity-40 font-mono">{decryptedProductos.filter(p=>p.categoria===cat).length} Items</span>
                                         </div>
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-left text-xs text-white">
                                                 <thead className="bg-black/50 text-space-orange uppercase font-black text-[9px]"><tr><th className="p-4 text-white">SKU</th><th className="p-4 text-white">Nombre</th><th className="p-4 text-center text-white">Stock</th><th className="p-4 text-right text-white">ELIMINAR</th></tr></thead>
                                                 <tbody className="divide-y divide-white/5">
-                                                    {productos.filter(p => p.categoria === cat).map(p => (
+                                                    {decryptedProductos.filter(p => p.categoria === cat).map(p => (
                                                         <tr key={p.id} className="hover:bg-white/5 transition-all text-white">
                                                             <td className="p-4 font-mono text-space-purple text-[10px] font-bold text-white">{p.sku}</td>
                                                             <td className="p-4 italic text-white text-[10px] truncate max-w-[200px] uppercase text-white">{p.nombre}</td>
                                                             <td className={`p-4 text-center font-black ${p.stockActual<10?'text-red-500 animate-pulse':'text-cyber-green'}`}>{p.stockActual}</td>
                                                             <td className="p-4 text-right flex justify-end gap-2 text-white">
-                                                                {/* REQUERIMIENTO: Botones corregidos con contraste legible sin text-white sobreescrito */}
                                                                 <button 
                                                                     onClick={() => setNewProduct({id:p.id, sku:p.sku, nombre:p.nombre, precioCosto:p.precioCosto, precioCliente:p.precioCliente, precioSocio:p.precioSocio, stockInicial:p.stockActual, categoria:p.categoria})} 
                                                                     className="text-blue-400 hover:text-blue-300 hover:scale-125 transition-all p-1"
@@ -792,10 +1135,19 @@
                                 <form onSubmit={async (e)=>{ 
                                     e.preventDefault(); 
                                     if(newSujeto.id) {
-                                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', newSujeto.id), {nombre:newSujeto.nombre.toUpperCase(), tipo:newSujeto.tipo, telefono:newSujeto.telefono}); 
+                                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', newSujeto.id), {
+                                            nombre: encryptVal(newSujeto.nombre.toUpperCase(), vaultKey), 
+                                            tipo: newSujeto.tipo, 
+                                            telefono: encryptVal(newSujeto.telefono, vaultKey)
+                                        }); 
                                         mostrarNotificacion("Socio actualizado en el directorio central.");
                                     } else {
-                                        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), {nombre:newSujeto.nombre.toUpperCase(), tipo:newSujeto.tipo, telefono:newSujeto.tipo==='Cliente'?newSujeto.telefono:'', timestamp: Date.now()}); 
+                                        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), {
+                                            nombre: encryptVal(newSujeto.nombre.toUpperCase(), vaultKey), 
+                                            tipo: newSujeto.tipo, 
+                                            telefono: newSujeto.tipo==='Cliente' ? encryptVal(newSujeto.telefono, vaultKey) : '', 
+                                            timestamp: Date.now()
+                                        }); 
                                         mostrarNotificacion("Sujeto registrado en el directorio central.");
                                     }
                                     setNewSujeto({id:null, nombre:'', tipo:'Cliente', telefono:''}); 
@@ -832,13 +1184,13 @@
                                     <table className="w-full text-left text-xs text-white">
                                         <thead className="bg-[#101018] text-slate-500 uppercase font-black sticky top-0 text-white"><tr><th className="p-6 py-4 text-white">Tipo</th><th className="p-6 py-4 text-white font-white">Nombre de Entidad</th><th className="p-6 py-4 text-right text-white">ELIMINAR</th></tr></thead>
                                         <tbody className="divide-y divide-white/5 text-white">
-                                            {sujetos.map(s => (
+                                            {decryptedSujetos.map(s => (
                                                 <tr key={s.id} className="hover:bg-white/10 font-black uppercase italic transition-all group border-l-4 border-l-transparent hover:border-l-space-purple text-white">
                                                     <td className="p-6 text-white text-white"><span className={`px-3 py-1 rounded-md text-[7px] font-black border ${s.tipo==='Cliente'?'text-cyber-green border-cyber-green/30':s.tipo==='Proveedor'?'text-space-orange border-space-orange/30':'text-space-purple border-space-purple/30'}`}>{s.tipo}</span></td>
                                                     <td className="p-6 text-white text-[11px] font-bold transition-all text-white uppercase text-white">{s.nombre}</td>
                                                     <td className="p-6 text-right flex justify-end gap-3 opacity-30 group-hover:opacity-100 transition-opacity">
                                                         <button onClick={()=>setNewSujeto({id:s.id, nombre:s.nombre, tipo:s.tipo, telefono:s.telefono})} className="text-blue-400 hover:scale-125 transition-transform text-white"><i data-lucide="edit-3"></i></button>
-                                                        <button onClick={async ()=>{ if(confirm('¿Anular registro permanentemente?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', s.id)); }} className="text-red-600 hover:scale-125 transition-transform text-white"><i data-lucide="trash-2" className="w-4 h-4 text-white"></i></button>
+                                                        <button onClick={async ()=>{ if(confirm('¿Anular registro?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', s.id)); }} className="text-red-600 hover:scale-125 transition-transform text-white"><i data-lucide="trash-2" className="w-4 h-4 text-white"></i></button>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -853,7 +1205,7 @@
         };
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />); // Corrección del cierre de renderizado de React 18
+        root.render(<App />); 
         
         onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), () => {
              setTimeout(() => { if(window.lucide) lucide.createIcons(); }, 500);
