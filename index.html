@@ -3,16 +3,19 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FERCO FARMA | REGISTROS DE BODEGA v18.2</title>
+    <title>FERCO FARMA | REGISTROS DE BODEGA v19.0</title>
     
+    <!-- Motores de Estilo y UI -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
 
+    <!-- React y Dependencias de Datos -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/prop-types@15.8.1/prop-types.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- Motores de Gráficos, Excel y Encriptación AES -->
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <script src="https://cdn.jsdelivr.net/npm/react-apexcharts@1.4.1/dist/react-apexcharts.iife.min.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
@@ -145,7 +148,7 @@
             const [inputKey, setInputKey] = useState('');
             const [vaultError, setVaultError] = useState('');
 
-            // Notification State
+            // Notification State reactiva a errores
             const [notificacion, setNotificacion] = useState({ show: false, mensaje: '', tipo: 'success' });
 
             // Refs para archivos masivos
@@ -154,7 +157,8 @@
             const fileSujRef = useRef(null);
 
             // POS / Despacho States
-            const [editingVentaId, setEditingVentaId] = useState(null); // Identificador de modo modificación de despacho
+            const [editingVentaId, setEditingVentaId] = useState(null);
+            const [oldItems, setOldItems] = useState([]); 
             const [carrito, setCarrito] = useState([]);
             const [pagos, setPagos] = useState([]);
             const [itemActual, setItemActual] = useState({ productoId: '', sku: '', nombre: '', cantidad: 1, valorUnitario: 0, fraccion: 1 });
@@ -260,6 +264,11 @@
                 }));
             }, [sujetos, isVaultLocked, vaultKey]);
 
+            // --- REFACTORIZACIÓN INVENTARIO ESTÁTICO (O(1) LECTURA) ---
+            const inventarioActualizado = useMemo(() => {
+                return decryptedProductos; 
+            }, [decryptedProductos]);
+
             // --- CONTROLES GENERALES DE CÁLCULO ---
             const totalOp = useMemo(() => {
                 const sub = carrito.reduce((s, i) => s + (parseFloat(i.cantidad) * i.fraccion * parseFloat(i.valorUnitario) || 0), 0);
@@ -274,7 +283,7 @@
                 if (datosVenta.canal !== 'Hades' || carrito.length === 0) return { ferco: 0, hades: 0 };
                 let fercoShare = 0; let hadesShare = 0;
                 carrito.forEach(it => {
-                    const p = decryptedProductos.find(x => x.id === it.productoId);
+                    const p = inventarioActualizado.find(x => x.id === it.productoId);
                     const costoSocioTotal = (p?.precioSocio || 0) * it.cantidad * it.fraccion;
                     const ventaTotalHades = it.valorUnitario * it.cantidad * it.fraccion;
                     fercoShare += costoSocioTotal;
@@ -282,7 +291,7 @@
                 });
                 const dom = datosVenta.entregaDomicilio ? (parseFloat(datosVenta.valorDomicilio) || 0) : 0;
                 return { ferco: fercoShare + dom, hades: hadesShare };
-            }, [carrito, datosVenta, decryptedProductos]);
+            }, [carrito, datosVenta, inventarioActualizado]);
 
             const metrics = useMemo(() => {
                 const res = decryptedVentas.reduce((acc, v) => {
@@ -292,9 +301,9 @@
                     else if (v.entidad === 'Proveedor') acc.prov += val;
                     return acc;
                 }, { cli: 0, dist: 0, prov: 0 });
-                const valorBodega = decryptedProductos.reduce((s,p) => s + ((parseFloat(p.stockActual) || 0) * (parseFloat(p.precioCosto) || 0)), 0);
-                return { ...res, valorBodega };
-            }, [decryptedVentas, decryptedProductos]);
+                const valorBodega = inventarioActualizado.reduce((s,p) => s + ((parseFloat(p.stockActual) || 0) * (parseFloat(p.precioCosto) || 0)), 0);
+                return { ...res, valorBodega, bajos: inventarioActualizado.filter(p => p.stockActual < 10).length };
+            }, [decryptedVentas, inventarioActualizado]);
 
             const rankingClientes = useMemo(() => {
                 const stats = decryptedVentas.filter(v => v.entidad === 'Cliente' && v.nombreEntidad).reduce((acc, v) => {
@@ -307,7 +316,7 @@
                 return Object.values(stats).sort((a,b) => b.total - a.total).slice(0, 5);
             }, [decryptedVentas]);
 
-            // --- PROTCOLO CLAVE MAESTRA ---
+            // --- PROTOCOLO CLAVE MAESTRA ---
             const handleUnlockVault = (e) => {
                 e.preventDefault(); if (!inputKey) return;
                 if (!vaultAuthDoc) {
@@ -322,26 +331,25 @@
                 }
             };
 
-            // --- CARGA DINÁMICA DE PRECIOS EN SELECCIÓN ---
-            useEffect(() => {
-                const term = itemActual.sku.trim().toUpperCase();
-                if (term.length > 1) {
-                    const p = decryptedProductos.find(x => x.sku.toUpperCase() === term);
-                    if (p && !itemActual.productoId) {
-                        let v = 0;
-                        if (datosVenta.entidad === 'Proveedor') v = p.precioCosto || 0;
-                        else if (datosVenta.entidad === 'Distribuidor' || datosVenta.canal === 'Hades') v = p.precioSocio || 0;
-                        else v = p.precioCliente || 0;
-                        setItemActual(prev => ({ ...prev, productoId: p.id, nombre: p.nombre, valorUnitario: v }));
-                    }
-                }
-            }, [itemActual.sku, datosVenta.entidad, datosVenta.canal, decryptedProductos]);
+            const selectProduct = (p) => {
+                let v = 0;
+                if (datosVenta.entidad === 'Proveedor') v = p.precioCosto || 0;
+                else if (datosVenta.entidad === 'Distribuidor' || datosVenta.canal === 'Hades') v = p.precioSocio || 0;
+                else v = p.precioCliente || 0;
+                setItemActual({ ...itemActual, productoId: p.id, sku: p.sku, nombre: p.nombre, valorUnitario: v });
+                setShowProductList(false);
+            };
 
-            // --- REQUERIMIENTO: CARGAR REGISTRO DE DESPACHO PARA EDICIÓN ---
+            const selectSubject = (s) => {
+                setDatosVenta({...datosVenta, nombreEntidad: s.nombre});
+                setShowSubjectList(false);
+            };
+
+            // --- CARGAR REGISTRO DE DESPACHO PARA EDICIÓN ---
             const iniciarEdicionDespacho = (v) => {
                 setEditingVentaId(v.id);
                 setCarrito(v.items || []);
-                setPagos(v.pagos || []);
+                setOldItems(JSON.parse(JSON.stringify(v.items || []))); 
                 setDatosVenta({
                     entidad: v.entidad || 'Cliente',
                     nombreEntidad: v.nombreEntidad || '',
@@ -360,6 +368,7 @@
 
             const cancelarEdicionDespacho = () => {
                 setEditingVentaId(null);
+                setOldItems([]);
                 setCarrito([]); setPagos([]);
                 setDatosVenta({ 
                     entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, domiciliarioAsignado: 'Cris', 
@@ -368,6 +377,7 @@
                 });
             };
 
+            // --- REGISTRO Y RE-CÁLCULO ATÓMICO NETO DE STOCK ---
             const registrarOActualizarDespacho = async (e) => {
                 e.preventDefault();
                 if (carrito.length === 0 || (totalAbonado < totalOp && datosVenta.entidad !== 'Proveedor')) return;
@@ -384,13 +394,45 @@
                     };
 
                     if (editingVentaId) {
-                        // BIFURCACIÓN: Actualizar registro existente
+                        const netChanges = {};
+                        
+                        // Revertir items antiguos
+                        oldItems.forEach(it => {
+                            const pid = it.productoId;
+                            const cant = parseFloat(it.cantidad) * (it.fraccion || 1);
+                            if (!netChanges[pid]) netChanges[pid] = 0;
+                            netChanges[pid] += datosVenta.entidad === 'Proveedor' ? -cant : cant;
+                        });
+
+                        // Aplicar los nuevos items
+                        carrito.forEach(it => {
+                            const pid = it.productoId;
+                            const cant = parseFloat(it.cantidad) * (it.fraccion || 1);
+                            if (!netChanges[pid]) netChanges[pid] = 0;
+                            netChanges[pid] += datosVenta.entidad === 'Proveedor' ? cant : -cant;
+                        });
+
+                        // Sincronización transaccional
+                        for (const pid of Object.keys(netChanges)) {
+                            const diff = netChanges[pid];
+                            if (diff === 0) continue;
+
+                            const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'productos', pid);
+                            const pData = inventarioActualizado.find(x => x.id === pid);
+                            if (pData) {
+                                const stockPrev = parseFloat(pData.stockActual) || 0;
+                                await updateDoc(pRef, { stockActual: stockPrev + diff });
+                            }
+                        }
+
                         const ref = doc(db, 'artifacts', appId, 'public', 'data', 'ventas', editingVentaId);
                         await updateDoc(ref, {
                             ...dataPayload,
                             auditLog: `MODIFICADO: ${datosVenta.responsable} el ${new Date().toLocaleDateString()}`
                         });
+
                         setEditingVentaId(null);
+                        setOldItems([]);
                         mostrarNotificacion("Registro de despacho actualizado de forma segura.");
                     } else {
                         // BIFURCACIÓN: Inyección de documento nuevo
@@ -404,7 +446,7 @@
                         if (datosVenta.descontarStockHades || datosVenta.canal === 'Ferco Farma') {
                             for (const it of carrito) {
                                 const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'productos', it.productoId);
-                                const pData = decryptedProductos.find(x => x.id === it.productoId);
+                                const pData = inventarioActualizado.find(x => x.id === it.productoId);
                                 if (pData) {
                                     const stockPrev = parseFloat(pData.stockActual) || 0;
                                     const cambio = parseFloat(it.cantidad) * it.fraccion;
@@ -447,10 +489,11 @@
                 };
                 if (newProduct.id) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', newProduct.id), encryptedData);
                 else await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), encryptedData);
-                setNewProduct({ id: null, sku: '', text: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
+                setNewProduct({ id: null, sku: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
                 mostrarNotificacion("Catálogo actualizado.");
             };
 
+            // --- MOTOR DE CARGA MASIVA SIN CONFLICTOS DE CARRERA (RACE CONDITIONS) ---
             const uploadExcel = async (e, type) => {
                 const file = e.target.files[0]; if (!file) return; setIsSyncing(true);
                 const reader = new FileReader();
@@ -458,39 +501,82 @@
                     try {
                         const bstr = evt.target.result; const wb = XLSX.read(bstr, { type: 'binary' });
                         const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+                        
                         if (type === 'INVENTARIO') {
-                            let currentBatch = [...decryptedProductos];
+                            let currentBatch = [...inventarioActualizado];
+                            let creados = 0; let actualizados = 0;
+
                             for (const row of data) {
                                 let skuE = String(row.SKU || "").trim().toUpperCase(); const cat = row.Categoria || 'Producto Final';
                                 if (!skuE) skuE = getNextSKU(cat, currentBatch);
-                                const exist = currentBatch.find(p => p.sku.toUpperCase() === skuE); const parsedStock = parseFloat(row.Stock) || 0;
+                                
+                                const exist = currentBatch.find(p => p.sku.toUpperCase() === skuE); 
+                                const parsedStock = parseFloat(row.Stock) || 0;
                                 const prodData = {
                                     sku: skuE, categoria: cat, nombre: encryptVal(String(row.Nombre || "PRODUCTO").toUpperCase(), vaultKey),
                                     precioCosto: encryptVal(parseFloat(row.Costo) || 0, vaultKey), precioCliente: encryptVal(parseFloat(row.Precio_Cliente) || 0, vaultKey), precioSocio: encryptVal(parseFloat(row.Precio_Socio) || 0, vaultKey),
                                     stockActual: parsedStock, stockInicial: parsedStock, timestamp: Date.now()
                                 };
-                                if (exist) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', exist.id), prodData);
-                                else { const dR = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), prodData); currentBatch.push({ id: dR.id, ...prodData }); }
+                                
+                                if (exist) {
+                                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', exist.id), prodData);
+                                    exist.stockActual = parsedStock;
+                                    exist.stockInicial = parsedStock;
+                                    exist.nombre = String(row.Nombre || "PRODUCTO").toUpperCase();
+                                    exist.precioCosto = parseFloat(row.Costo) || 0;
+                                    exist.precioCliente = parseFloat(row.Precio_Cliente) || 0;
+                                    exist.precioSocio = parseFloat(row.Precio_Socio) || 0;
+                                    actualizados++;
+                                } else {
+                                    const dR = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), prodData);
+                                    currentBatch.push({ id: dR.id, ...prodData }); 
+                                    creados++;
+                                }
                             }
+                            mostrarNotificacion(`Sincronización Completa: ${creados} SKUs creados, ${actualizados} actualizados.`);
                         } else if (type === 'SUJETOS') {
-                            for (const row of data) { if (row.Nombre) await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), { nombre: encryptVal(row.Nombre.toUpperCase(), vaultKey), tipo: row.Tipo || 'Cliente', telefono: encryptVal(row.Telefono || '', vaultKey), timestamp: Date.now() }); }
+                            let creados = 0;
+                            for (const row of data) { 
+                                if (row.Nombre) {
+                                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), { nombre: encryptVal(row.Nombre.toUpperCase(), vaultKey), tipo: row.Tipo || 'Cliente', telefono: encryptVal(row.Telefono || '', vaultKey), timestamp: Date.now() }); 
+                                    creados++;
+                                }
+                            }
+                            mostrarNotificacion(`Éxito: ${creados} nuevos sujetos registrados.`);
                         } else if (type === 'DESPACHOS') {
+                            // Saneamiento de carrera de stock en importación de despachos (Running Stock Map)
+                            let runningStock = {};
+                            inventarioActualizado.forEach(prod => {
+                                runningStock[prod.id] = parseFloat(prod.stockActual) || 0;
+                            });
+
+                            let creados = 0;
+                            let omitidos = 0;
                             for (const row of data) {
-                                const p = decryptedProductos.find(x => x.sku === row.SKU);
+                                const p = inventarioActualizado.find(x => x.sku === row.SKU);
                                 if (p && row.Sujeto) {
-                                    const mI = [{ productoId: p.id, sku: p.sku, nombre: p.nombre, cantidad: row.Cantidad || 1, valorUnitario: row.Valor_Uni || 0, fraccion: 1 }];
+                                    const currentStock = runningStock[p.id];
+                                    const rowQty = parseFloat(row.Cantidad) || 1;
+                                    const nuevoStock = currentStock - rowQty;
+                                    runningStock[p.id] = nuevoStock;
+
+                                    const mI = [{ productoId: p.id, sku: p.sku, nombre: p.nombre, cantidad: rowQty, valorUnitario: row.Valor_Uni || 0, fraccion: 1 }];
                                     const mP = [{ metodo: row.Metodo || 'Efectivo', monto: row.Total || 0, comentario: row.Obs || '' }];
-                                    const mS = { ferco: (p.precioSocio || 0) * (row.Cantidad || 1), hades: ((row.Valor_Uni || 0) - (p.precioSocio || 0)) * (row.Cantidad || 1) };
+                                    const mS = { ferco: (p.precioSocio || 0) * rowQty, hades: ((row.Valor_Uni || 0) - (p.precioSocio || 0)) * rowQty };
+                                    
                                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), {
                                         cuentaDestino: row.Cuenta_Ingreso || 'CRIS', entidad: row.Tipo_Sujeto || 'Cliente', canal: row.Canal || 'Ferco Farma', fecha: row.Fecha || new Date().toLocaleDateString(), hora: row.Hora || new Date().toLocaleTimeString(), timestamp: Date.now(), estado: row.Estado || 'Pagado',
                                         responsable: encryptVal('CARGA_MASIVA', vaultKey), nombreEntidad: encryptVal(row.Sujeto.toUpperCase(), vaultKey), totalVenta: encryptVal(parseFloat(row.Total) || 0, vaultKey), items: encryptVal(JSON.stringify(mI), vaultKey), pagos: encryptVal(JSON.stringify(mP), vaultKey), split: encryptVal(JSON.stringify(mS), vaultKey)
                                     });
-                                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', p.id), { stockActual: (parseFloat(p.stockActual) || 0) - (parseFloat(row.Cantidad) || 0) });
+                                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', p.id), { stockActual: nuevoStock });
+                                    creados++;
+                                } else {
+                                    omitidos++;
                                 }
                             }
+                            mostrarNotificacion(`Éxito: ${creados} despachos del log histórico integrados.${omitidos > 0 ? ` (Omitidos: ${omitidos} por SKU no registrado)` : ''}`);
                         }
-                        mostrarNotificacion("Importación masiva completada.");
-                    } catch (err) { mostrarNotificacion("Error en el archivo.", "error"); } finally { setIsSyncing(false); e.target.value = null; }
+                    } catch (err) { mostrarNotificacion("Error en el mapeo de columnas del archivo.", "error"); } finally { setIsSyncing(false); e.target.value = null; }
                 }; reader.readAsBinaryString(file);
             };
 
@@ -509,6 +595,7 @@
                 const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Log"); XLSX.writeFile(wb, `FERCO_FINANCE_REPORT_${Date.now()}.xlsx`);
             };
 
+            // Sincronización de Iconos Lucide
             useEffect(() => { 
                 if (!loading && window.lucide) window.lucide.createIcons(); 
             }, [loading, view, productos, ventas, carrito, datosVenta, sujetos, pagos, metodoActual, newProduct, newSujeto, showProductList, showSubjectList, saldarModal, isVaultLocked, editingVentaId]);
@@ -540,9 +627,11 @@
 
             return (
                 <div className="max-w-[1600px] mx-auto p-4 md:p-6 lg:p-8">
+                    {/* Notification Toast Reactivo */}
                     {notificacion.show && (
-                        <div className="fixed bottom-6 right-6 z-50 p-4 rounded-xl shadow-2xl animate-bounce border text-xs font-black uppercase flex items-center gap-3 bg-black border-cyber-green text-cyber-green">
-                            <i data-lucide="check-circle"></i><span>{notificacion.mensaje}</span>
+                        <div className={`fixed bottom-6 right-6 z-50 p-4 rounded-xl shadow-2xl animate-bounce border text-xs font-black uppercase flex items-center gap-3 bg-black transition-all duration-300 ${notificacion.tipo === 'success' ? 'border-cyber-green text-cyber-green shadow-cyber-green/10' : 'border-red-500 text-red-500 shadow-red-500/10'}`}>
+                            <i data-lucide={notificacion.tipo === 'success' ? "check-circle" : "alert-triangle"}></i>
+                            <span>{notificacion.mensaje}</span>
                         </div>
                     )}
 
@@ -575,7 +664,7 @@
                     <header className="flex flex-col lg:flex-row justify-between items-center mb-8 gap-6 border-b border-white/5 pb-6">
                         <div className="flex items-center gap-4 text-white">
                             <img src="logo.jpg" alt="L" className="w-12 h-12 rounded-xl border border-white/10 shadow-xl" />
-                            <div><h1 className="text-3xl font-black italic tracking-tighter uppercase">FERCO <span className="text-space-orange">FARMA</span></h1><p className="text-[7px] uppercase tracking-[0.5em] font-black text-space-purple opacity-60">REGISTROS DE BODEGA v18.2</p></div>
+                            <div><h1 className="text-3xl font-black italic tracking-tighter uppercase">FERCO <span className="text-space-orange">FARMA</span></h1><p className="text-[7px] uppercase tracking-[0.5em] font-black text-space-purple opacity-60">REGISTROS DE BODEGA v19.0</p></div>
                         </div>
                         <nav className="flex flex-wrap gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
                             {['dashboard', 'despacho', 'inventario', 'directorio'].map(v => (<button key={v} onClick={() => setView(v)} className={`px-5 py-2 rounded-lg font-black text-[9px] uppercase transition-all ${view===v?'bg-white text-black shadow-xl':'text-slate-500 hover:text-white'}`}>{v.toUpperCase()}</button>))}
@@ -599,7 +688,7 @@
                                         ))}
                                     </div>
                                 </div>
-                                <div className="lg:col-span-8 glass-panel p-6 min-h-[400px] flex items-center justify-center">
+                                <div className="lg:col-span-8 glass-panel p-6 min-h-[400px] flex items-center justify-center text-white">
                                     {ReactApexChart && <ReactApexChart options={{ labels: ['Clientes', 'Aliados', 'Proveedores'], colors: ['#39ff14', '#9333ea', '#f97316'], theme: { mode: 'dark' }, chart: { background: 'transparent' }, stroke: { show: false }, legend: { position: 'bottom', fontStyle: 'italic', fontWeight: 900 } }} series={[metrics.cli, metrics.dist, metrics.prov]} type="donut" width="100%" height={340} />}
                                 </div>
                             </div>
@@ -649,7 +738,7 @@
                                             <input type="text" value={itemActual.sku} onFocus={() => setShowProductList(true)} onChange={(e)=>setItemActual({...itemActual, sku: e.target.value, productoId:''})} placeholder="SKU / PRODUCTO..." className="w-full p-3 bg-black/60 rounded-xl text-xs border border-white/10 focus:border-space-purple outline-none font-bold uppercase text-white shadow-inner" />
                                             {showProductList && (
                                                 <div className="selectable-list">
-                                                    {decryptedProductos.filter(p => p.sku.toLowerCase().includes(itemActual.sku.toLowerCase()) || p.nombre.toLowerCase().includes(itemActual.sku.toLowerCase())).map(p => (
+                                                    {inventarioActualizado.filter(p => p.sku.toLowerCase().includes(itemActual.sku.toLowerCase()) || p.nombre.toLowerCase().includes(itemActual.sku.toLowerCase())).map(p => (
                                                         <div key={p.id} onClick={() => selectProduct(p)} className="selectable-item">{p.sku} - {p.nombre}</div>
                                                     ))}
                                                     <div onClick={()=>setShowProductList(false)} className="p-2 text-[7px] text-center text-red-500 uppercase cursor-pointer">Cerrar Lista</div>
@@ -664,13 +753,12 @@
                                         )}
 
                                         <div className="grid grid-cols-2 gap-2">
-                                            <input type="number" value={itemActual.cantidad} onChange={e=>setItemActual({...itemActual, cantidad:e.target.value})} placeholder="Cantidad" className="bg-black/60 p-3 rounded-xl text-xs border border-white/5 font-black text-white outline-none" />
+                                            <input type="number" value={itemActual.cantidad} onChange={e=>setItemActual({...itemActual, cantidad:e.target.value})} placeholder="Cantidad" className="bg-black/60 p-3 rounded-xl text-xs border border-white/5 font-black text-white" />
                                             <input type="number" value={itemActual.valorUnitario} onChange={e=>setItemActual({...itemActual, valorUnitario:e.target.value})} placeholder="VALOR $" className="bg-black/60 p-3 rounded-xl text-xs text-cyber-green font-black border border-white/5 outline-none focus:border-white" />
                                         </div>
                                         <button type="button" onClick={()=>{ if(!itemActual.productoId || !itemActual.cantidad) return; setCarrito([...carrito, { ...itemActual, idT: Date.now() }]); setItemActual({sku:'', nombre:'', productoId:'', cantidad:1, valorUnitario:0, fraccion: 1}); }} className="w-full py-3 bg-space-purple/10 text-space-purple border border-space-purple/30 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-md">AGREGAR A COMPRA</button>
                                     </div>
 
-                                    {/* HADES SPLIT */}
                                     {datosVenta.canal === 'Hades' && carrito.length > 0 && (
                                         <div className="p-4 hades-card rounded-2xl space-y-2 animate-in slide-in-from-top-2 shadow-2xl">
                                             <div className="flex justify-between text-[9px] font-black uppercase text-slate-400"><span>Base FERCO FARMA (Costo Socio + Domi):</span><span className="text-cyber-green">${hadesSplit.ferco.toLocaleString()}</span></div>
@@ -753,7 +841,7 @@
                                     <div className="pt-4 border-t border-white/5 space-y-3">
                                         <p className="text-[8px] font-black uppercase text-cyber-green italic text-center">Registro Masivo de Despachos</p>
                                         <div className="grid grid-cols-2 gap-2">
-                                            <input type="file" ref={fileDespRef} onChange={(e) => uploadExcel(e, 'DESPACHOS')} className="hidden" accept=".xlsx, .xls" />
+                                            <input type="file" ref={fileDespRef} onChange={(e) => uploadExcel(e, 'DESPACHOS')} className="hidden" accept=".xlsx, .xls, .csv" />
                                             <button onClick={() => fileDespRef.current.click()} disabled={isSyncing} className="py-2.5 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">CARGAR ARCHIVO</button>
                                             <button onClick={() => downloadTemplate('DESPACHOS')} className="py-2.5 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">PLANTILLA</button>
                                         </div>
@@ -778,10 +866,10 @@
                                                             {/* Botón Saldar liberado (Siempre Visible) */}
                                                             <button onClick={() => setSaldarModal({ show: true, venta: v, nuevoMetodo: 'Efectivo', montoEfectivo: v.totalVenta || 0, fechaEfectiva: new Date().toISOString().split('T')[0], observacionCierre: 'Abono Realizado' })} className="px-2 py-1 bg-hades-gold/20 text-hades-gold border border-hades-gold/30 rounded text-[7px] font-black uppercase hover:bg-hades-gold hover:text-black transition-all">Saldar</button>
                                                             
-                                                            {/* REQUERIMIENTO: Botón de Edición Estructural de Despachos */}
+                                                            {/* Botón de Edición Estructural de Despachos */}
                                                             <button onClick={() => iniciarEdicionDespacho(v)} className="text-blue-400 hover:text-blue-300 hover:scale-125 transition-all p-1" title="Modificar Despacho"><i data-lucide="edit-3" className="w-3.5 h-3.5"></i></button>
                                                             
-                                                            <button onClick={async ()=>{ if(confirm('¿Anular registro?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', v.id)); }} className="text-red-500 hover:scale-125 transition-transform p-1"><i data-lucide="trash-2" className="w-3.5 h-3.5"></i></button>
+                                                            <button onClick={async ()=>{ if(confirm('¿Anular?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', v.id)); }} className="text-red-500 hover:scale-125 transition-transform p-1"><i data-lucide="trash-2" className="w-3.5 h-3.5"></i></button>
                                                         </td>
                                                     </tr>
                                                 ))}
@@ -800,7 +888,7 @@
                                         <div className="grid grid-cols-3 gap-1.5 p-1 bg-black/50 rounded-xl border border-white/5 shadow-inner">
                                             {['Producto Final', 'Insumo', 'Empaque'].map(cat => (<button key={cat} type="button" onClick={()=>setNewProduct({...newProduct, category: cat, categoria: cat})} className={`py-2 rounded-lg text-[7px] font-black transition-all ${newProduct.categoria === cat ? 'bg-white text-black shadow-lg' : 'text-slate-600 hover:text-white'}`}>{cat.toUpperCase()}</button>))}
                                         </div>
-                                        <div className="relative"><input list="mSkus" value={newProduct.sku} onChange={e=>setNewProduct({...newProduct, sku:e.target.value})} placeholder="SKU (AUTO-CONSECUTIVO)" className="w-full p-3 bg-black/60 rounded-xl text-xs border border-white/10 text-white font-bold uppercase focus:border-white shadow-inner" /><datalist id="mSkus">{decryptedProductos.map(p => <option key={p.id} value={p.sku}>{p.nombre}</option>)}</datalist></div>
+                                        <div className="relative"><input list="mSkus" value={newProduct.sku} onChange={e=>setNewProduct({...newProduct, sku:e.target.value})} placeholder="SKU (AUTO-CONSECUTIVO)" className="w-full p-3 bg-black/60 rounded-xl text-xs border border-white/10 text-white font-bold uppercase focus:border-white shadow-inner" /><datalist id="mSkus">{inventarioActualizado.map(p => <option key={p.id} value={p.sku}>{p.nombre}</option>)}</datalist></div>
                                         <input value={newProduct.nombre} onChange={e=>setNewProduct({...newProduct, nombre:e.target.value})} placeholder="PRODUCTO" className="w-full p-3 bg-black/60 rounded-xl text-xs border border-white/10 font-black uppercase focus:border-white text-white shadow-inner" required />
                                         <div className="space-y-2 bg-white/5 p-4 rounded-2xl border border-white/10 shadow-inner">
                                             <input type="number" value={newProduct.precioCosto} onChange={e=>setNewProduct({...newProduct, precioCosto:e.target.value})} placeholder="PRECIO DE COSTO $" className="w-full bg-black/60 p-2.5 rounded-lg text-xs font-black border border-white/5 text-cyber-green outline-none" required />
@@ -809,20 +897,23 @@
                                         </div>
                                         <input type="number" value={newProduct.stockInicial} onChange={e=>setNewProduct({...newProduct, stockInicial:e.target.value})} placeholder="CANTIDAD A INGRESAR" className="w-full bg-black/60 p-3.5 rounded-xl text-xs font-black border border-white/10 text-white shadow-inner" required />
                                         <button type="submit" className="w-full bg-space-orange text-white font-black py-4 rounded-xl uppercase shadow-xl hover:scale-105 active:scale-95 transition-all text-[10px] tracking-widest italic uppercase">{newProduct.id ? 'ACTUALIZAR DATOS' : 'ACTUALIZAR STOCK'}</button>
-                                        {newProduct.id && (<button type="button" onClick={() => setNewProduct({ id: null, sku: '', text: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' })} className="w-full mt-2 bg-slate-800 text-white font-black py-2.5 rounded-xl uppercase text-[10px] tracking-widest border border-white/10 hover:bg-slate-700 italic">Cancelar Edición</button>)}
+                                        {newProduct.id && (<button type="button" onClick={() => setNewProduct({ id: null, sku: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' })} className="w-full mt-2 bg-slate-800 text-white font-black py-2.5 rounded-xl uppercase text-[10px] tracking-widest border border-white/10 hover:bg-slate-700 italic">Cancelar Edición</button>)}
                                     </form>
                                 </div>
                                 <div className="glass-panel p-6 border-cyber-green/30 text-center space-y-4">
                                     <h3 className="text-[10px] font-black uppercase text-cyber-green italic tracking-widest flex items-center justify-center gap-2"><i data-lucide="upload-cloud"></i> ACTUALIZACION MASIVA</h3>
-                                    <input type="file" ref={fileInvRef} onChange={(e) => uploadExcel(e, 'INVENTARIO')} className="hidden" accept=".xlsx, .xls" />
-                                    <div className="grid grid-cols-2 gap-2"><button onClick={() => fileInvRef.current.click()} disabled={isSyncing} className="py-3 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">CARGAR ARCHIVO</button><button onClick={exportarPlantilla} className="py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">DESCARGAR PLANTILLA</button></div>
+                                    <input type="file" ref={fileInvRef} onChange={(e) => uploadExcel(e, 'INVENTARIO')} className="hidden" accept=".xlsx, .xls, .csv" />
+                                    <div className="grid grid-cols-2 gap-2 text-white">
+                                        <button onClick={() => fileInvRef.current.click()} disabled={isSyncing} className="py-3 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">CARGAR ARCHIVO</button>
+                                        <button onClick={exportarPlantilla} className="py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">DESCARGAR PLANTILLA</button>
+                                    </div>
                                 </div>
                             </div>
                             <div className="lg:col-span-8 space-y-6 h-[850px] overflow-y-auto pr-2 table-container">
                                 {['Producto Final', 'Insumo', 'Empaque'].map(cat => (
                                     <div key={cat} className="glass-panel overflow-hidden border-white/5 mb-6 shadow-xl text-white">
-                                        <div className="p-4 bg-white/5 font-black uppercase text-[10px] border-b border-white/5 flex justify-between text-white"><span>Master Feed: {cat}</span><span className="text-space-purple opacity-40 font-mono">{decryptedProductos.filter(p=>p.categoria===cat).length} Items</span></div>
-                                        <div className="overflow-x-auto"><table className="w-full text-left text-xs text-white"><thead className="bg-black/50 text-space-orange uppercase font-black text-[9px]"><tr><th className="p-4 text-white">SKU</th><th className="p-4 text-white">Nombre</th><th className="p-4 text-center text-white">Stock</th><th className="p-4 text-right text-white">ELIMINAR</th></tr></thead><tbody className="divide-y divide-white/5">{decryptedProductos.filter(p => p.categoria === cat).map(p => (<tr key={p.id} className="hover:bg-white/5 transition-all text-white"><td className="p-4 font-mono text-space-purple text-[10px] font-bold">{p.sku}</td><td className="p-4 italic text-white text-[10px] truncate max-w-[200px] uppercase">{p.nombre}</td><td className={`p-4 text-center font-black ${p.stockActual<10?'text-red-500 animate-pulse':'text-cyber-green'}`}>{p.stockActual}</td><td className="p-4 text-right flex justify-end gap-2 text-white"><button onClick={()=>setNewProduct({id:p.id, sku:p.sku, nombre:p.nombre, precioCosto:p.precioCosto, precioCliente:p.precioCliente, precioSocio:p.precioSocio, stockInicial:p.stockActual, categoria:p.categoria})} className="text-blue-400 hover:scale-125 transition-all p-1"><i data-lucide="edit-3"></i></button><button onClick={async ()=>{ if(confirm('¿Borrar?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', p.id)); }} className="text-red-500 hover:scale-125 transition-all p-1"><i data-lucide="trash-2"></i></button></td></tr>))}</tbody></table></div>
+                                        <div className="p-4 bg-white/5 font-black uppercase text-[10px] border-b border-white/5 flex justify-between text-white"><span>Master Feed: {cat}</span><span className="text-space-purple opacity-40 font-mono">{inventarioActualizado.filter(p=>p.categoria===cat).length} Items</span></div>
+                                        <div className="overflow-x-auto"><table className="w-full text-left text-xs text-white"><thead className="bg-black/50 text-space-orange uppercase font-black text-[9px]"><tr><th className="p-4 text-white">SKU</th><th className="p-4 text-white">Nombre</th><th className="p-4 text-center text-white">Stock</th><th className="p-4 text-right text-white">ELIMINAR</th></tr></thead><tbody className="divide-y divide-white/5">{inventarioActualizado.filter(p => p.categoria === cat).map(p => (<tr key={p.id} className="hover:bg-white/5 transition-all text-white"><td className="p-4 font-mono text-space-purple text-[10px] font-bold">{p.sku}</td><td className="p-4 italic text-white text-[10px] truncate max-w-[200px] uppercase">{p.nombre}</td><td className={`p-4 text-center font-black ${p.stockActual<10?'text-red-500 animate-pulse':'text-cyber-green'}`}>{p.stockActual}</td><td className="p-4 text-right flex justify-end gap-2 text-white"><button onClick={()=>setNewProduct({id:p.id, sku:p.sku, nombre:p.nombre, precioCosto:p.precioCosto, precioCliente:p.precioCliente, precioSocio:p.precioSocio, stockInicial:p.stockActual, categoria:p.categoria})} className="text-blue-400 hover:scale-125 transition-all p-1"><i data-lucide="edit-3"></i></button><button onClick={async ()=>{ if(confirm('¿Borrar?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', p.id)); }} className="text-red-500 hover:scale-125 transition-all p-1"><i data-lucide="trash-2"></i></button></td></tr>))}</tbody></table></div>
                                     </div>
                                 ))}
                             </div>
@@ -831,8 +922,8 @@
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-500 text-white">
                             <div className="lg:col-span-4 glass-panel p-8 border-white/10 shadow-2xl">
                                 <h2 className="text-lg font-black mb-8 italic uppercase border-l-4 border-white pl-4 text-white tracking-widest">{newSujeto.id ? 'MODIFICAR SUJETO' : 'Directorio Maestro'}</h2>
-                                <form onSubmit={async (e)=>{ e.preventDefault(); if(newSujeto.id) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', newSujeto.id), { nombre: encryptVal(newSujeto.nombre.toUpperCase(), vaultKey), tipo: newSujeto.tipo, telefono: encryptVal(newSujeto.telefono, vaultKey) }); } else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), { nombre: encryptVal(newSujeto.nombre.toUpperCase(), vaultKey), tipo: newSujeto.tipo, telefono: encryptVal(newSujeto.telefono, vaultKey), timestamp: Date.now() }); } setNewSujeto({id:null, nombre:'', tipo:'Cliente', telefono:''}); mostrarNotificacion("Directorio sincronizado."); }} className="space-y-6"><div className="grid grid-cols-3 gap-1.5 p-1.5 bg-black/40 rounded-xl border border-white/10 shadow-inner">{['Cliente', 'Proveedor', 'Distribuidor'].map(t => <button key={t} type="button" onClick={()=>setNewSujeto({...newSujeto, tipo:t})} className={`py-3 rounded-lg text-[8px] font-black uppercase transition-all ${newSujeto.tipo===t?'bg-white text-black shadow-xl':'text-slate-600'}`}>{t}</button>)}</div><input value={newSujeto.nombre} onChange={e=>setNewSujeto({...newSujeto, nombre:e.target.value})} placeholder="NOMBRE / ENTIDAD" className="w-full p-4 bg-black/60 rounded-xl text-xs font-black border border-white/5 outline-none uppercase" required /><input value={newSujeto.telefono} onChange={e=>setNewSujeto({...newSujeto, telefono:e.target.value})} placeholder="TELÉFONO / UPLINK" className="w-full p-4 bg-[#1a1a24] rounded-xl text-xs font-black border border-white/5 outline-none" /><button type="submit" className="w-full bg-white text-black font-black py-4 rounded-xl uppercase text-xs tracking-widest italic font-black">REGISTRAR SUJETO</button>{newSujeto.id && (<button type="button" onClick={() => setNewSujeto({ id: null, nombre: '', tipo: 'Cliente', telefono: '' })} className="w-full mt-2 bg-slate-800 text-white font-black py-2.5 rounded-xl uppercase text-[10px] border border-white/10 hover:bg-slate-700 italic">Cancelar</button>)}</form>
-                                <div className="mt-8 pt-8 border-t border-white/5 space-y-4"><h3 className="text-[10px] font-black uppercase text-cyber-green italic text-center tracking-widest">ACTUALIZACION MASIVA</h3><input type="file" ref={fileSujRef} onChange={(e) => uploadExcel(e, 'SUJETOS')} className="hidden" accept=".xlsx, .xls" /><div className="grid grid-cols-2 gap-2"><button onClick={() => fileSujRef.current.click()} className="py-3 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">CARGAR ARCHIVO</button><button onClick={() => downloadTemplate('SUJETOS')} className="py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">PLANTILLA</button></div></div>
+                                <form onSubmit={async (e)=>{ e.preventDefault(); if(newSujeto.id) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', newSujeto.id), { nombre: encryptVal(newSujeto.nombre.toUpperCase(), vaultKey), tipo: newSujeto.tipo, telefono: encryptVal(newSujeto.telefono, vaultKey) }); } else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), { nombre: encryptVal(newSujeto.nombre.toUpperCase(), vaultKey), tipo: newSujeto.tipo, telefono: encryptVal(newSujeto.telefono, vaultKey), timestamp: Date.now() }); } setNewSujeto({id:null, nombre:'', tipo:'Cliente', telefono:''}); mostrarNotificacion("Directorio Sincronizado."); }} className="space-y-6"><div className="grid grid-cols-3 gap-1.5 p-1.5 bg-black/40 rounded-xl border border-white/10 shadow-inner">{['Cliente', 'Proveedor', 'Distribuidor'].map(t => <button key={t} type="button" onClick={()=>setNewSujeto({...newSujeto, tipo:t})} className={`py-3 rounded-lg text-[8px] font-black uppercase transition-all ${newSujeto.tipo===t?'bg-white text-black shadow-xl':'text-slate-600'}`}>{t}</button>)}</div><input value={newSujeto.nombre} onChange={e=>setNewSujeto({...newSujeto, nombre:e.target.value})} placeholder="NOMBRE / ENTIDAD" className="w-full p-4 bg-black/60 rounded-xl text-xs font-black border border-white/5 outline-none uppercase" required /><input value={newSujeto.telefono} onChange={e=>setNewSujeto({...newSujeto, telefono:e.target.value})} placeholder="TELÉFONO / UPLINK" className="w-full p-4 bg-[#1a1a24] rounded-xl text-xs font-black border border-white/5 outline-none shadow-inner" /><button type="submit" className="w-full bg-white text-black font-black py-4 rounded-xl uppercase text-xs tracking-widest italic font-black">REGISTRAR SUJETO</button>{newSujeto.id && (<button type="button" onClick={() => setNewSujeto({ id: null, nombre: '', tipo: 'Cliente', telefono: '' })} className="w-full mt-2 bg-slate-800 text-white font-black py-2.5 rounded-xl uppercase text-[10px] border border-white/10 hover:bg-slate-700 italic">Cancelar</button>)}</form>
+                                <div className="mt-8 pt-8 border-t border-white/5 space-y-4"><h3 className="text-[10px] font-black uppercase text-cyber-green italic text-center tracking-widest">ACTUALIZACION MASIVA</h3><input type="file" ref={fileSujRef} onChange={(e) => uploadExcel(e, 'SUJETOS')} className="hidden" accept=".xlsx, .xls, .csv" /><div className="grid grid-cols-2 gap-2"><button onClick={() => fileSujRef.current.click()} className="py-3 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">CARGAR ARCHIVO</button><button onClick={() => downloadTemplate('SUJETOS')} className="py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">PLANTILLA</button></div></div>
                             </div>
                             <div className="lg:col-span-8 glass-panel overflow-hidden h-[800px] flex flex-col border-white/5 text-white shadow-xl"><div className="p-6 bg-white/5 font-black uppercase text-[10px] border-b border-white/5 flex justify-between items-center"><span>Base de Datos Aliados</span><span className="opacity-40 italic font-mono">{sujetos.length} Registros</span></div><div className="overflow-x-auto flex-1 table-container"><table className="w-full text-left text-xs"><thead className="bg-[#101018] text-slate-500 uppercase font-black sticky top-0"><tr><th className="p-6 py-4 text-white">Tipo</th><th className="p-6 py-4 text-white">Nombre de Entidad</th><th className="p-6 py-4 text-right text-white">ELIMINAR</th></tr></thead><tbody className="divide-y divide-white/5">{decryptedSujetos.map(s => (<tr key={s.id} className="hover:bg-white/10 font-black uppercase italic transition-all group border-l-4 border-l-transparent hover:border-l-space-purple"><td className="p-6"><span className={`px-3 py-1 rounded-md text-[7px] font-black border ${s.tipo==='Cliente'?'text-cyber-green border-cyber-green/30':s.tipo==='Proveedor'?'text-space-orange border-space-orange/30':'text-space-purple border-space-purple/30'}`}>{s.tipo}</span></td><td className="p-6 text-[11px] font-bold uppercase">{s.nombre}</td><td className="p-6 text-right flex justify-end gap-3 opacity-30 group-hover:opacity-100"><button onClick={()=>setNewSujeto({id:s.id, nombre:s.nombre, tipo:s.tipo, telefono:s.telefono})} className="text-blue-400 hover:scale-125 transition-all p-1"><i data-lucide="edit-3"></i></button><button onClick={async ()=>{ if(confirm('¿Anular?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', s.id)); }} className="text-red-500 hover:scale-125 transition-all p-1"><i data-lucide="trash-2"></i></button></td></tr>))}</tbody></table></div></div>
                         </div>
