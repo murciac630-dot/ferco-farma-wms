@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FERCO FARMA | REGISTROS DE BODEGA v17.2</title>
+    <title>FERCO FARMA | REGISTROS DE BODEGA v17.4</title>
     
     <!-- Motores de Estilo y UI -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -415,6 +415,11 @@
                 XLSX.writeFile(wb, `FERCO_FINANCE_REPORT_${Date.now()}.xlsx`);
             };
 
+            // --- REGLA: Sincronización Correcta de Iconos en Cambios de Estado ---
+            useEffect(() => { 
+                if (!loading && window.lucide) window.lucide.createIcons(); 
+            }, [loading, view, productos, ventas, carrito, datosVenta, sujetos, pagos, metodoActual, newProduct, newSujeto, showProductList, showSubjectList]);
+
             if (loading) return <div className="flex h-screen items-center justify-center bg-[#020206] text-space-purple font-black animate-pulse uppercase tracking-[0.5em]">Central FERCO FARMA Activo...</div>;
 
             return (
@@ -433,7 +438,7 @@
                             <img src="logo.jpg" alt="L" className="w-12 h-12 rounded-xl shadow-xl border border-white/10" />
                             <div>
                                 <h1 className="text-3xl font-black italic tracking-tighter uppercase">FERCO <span className="text-space-orange">FARMA</span></h1>
-                                <p className="text-[7px] uppercase tracking-[0.5em] font-black text-space-purple opacity-60">REGISTROS DE BODEGA v17.2</p>
+                                <p className="text-[7px] uppercase tracking-[0.5em] font-black text-space-purple opacity-60">REGISTROS DE BODEGA v17.4</p>
                             </div>
                         </div>
                         <nav className="flex flex-wrap gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
@@ -596,11 +601,11 @@
                                         {datosVenta.aplicarDescuento && <input type="number" value={datosVenta.valorDescuento} onChange={e=>setDatosVenta({...datosVenta, valorDescuento:e.target.value})} placeholder="TOTAL DESCUENTO $" className="w-full p-2.5 bg-black/60 border border-white/10 rounded-lg text-xs text-space-purple font-black outline-none shadow-inner" />}
                                     </div>
 
-                                    {/* REQUERIMIENTO: Selector Cuenta de Ingreso */}
+                                    {/* Selector Cuenta de Ingreso */}
                                     <div className="p-4 bg-black/30 rounded-2xl border border-white/5 space-y-3">
                                         <p className="text-[8px] font-black uppercase text-space-purple tracking-widest italic">Cuenta de Ingreso:</p>
                                         <div className="grid grid-cols-2 gap-2">
-                                            {['CRIS', 'JHON'].map(cta => (
+                                            {['CRIS', 'JHION'].map(cta => (
                                                 <button 
                                                     key={cta} 
                                                     type="button" 
@@ -687,7 +692,10 @@
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-500 text-white">
                             <div className="lg:col-span-4 space-y-6 text-white text-white">
                                 <div className="glass-panel p-6 border-space-orange/30 shadow-xl text-white">
-                                    <h2 className="text-[10px] font-black mb-6 uppercase text-space-orange italic border-l-4 border-space-purple pl-3">INGRESAR A INVENTARIO</h2>
+                                    {/* REQUERIMIENTO: Título dinámico que indica si es ingreso o edición */}
+                                    <h2 className="text-[10px] font-black mb-6 uppercase text-space-orange italic border-l-4 border-space-purple pl-3">
+                                        {newProduct.id ? 'MODIFICAR PRODUCTO' : 'INGRESAR A INVENTARIO'}
+                                    </h2>
                                     <form onSubmit={upsertProd} className="space-y-4">
                                         <div className="grid grid-cols-3 gap-1.5 p-1 bg-black/50 rounded-xl border border-white/5 shadow-inner">
                                             {['Producto Final', 'Insumo', 'Empaque'].map(cat => (
@@ -707,7 +715,21 @@
                                             <input type="number" value={newProduct.precioSocio} onChange={e=>setNewProduct({...newProduct, precioSocio:e.target.value})} placeholder="PRECIO A ALIADOS $" className="w-full bg-black/60 p-2.5 rounded-lg text-xs font-black border border-white/5 text-white outline-none focus:border-white shadow-inner text-white" required />
                                         </div>
                                         <input type="number" value={newProduct.stockInicial} onChange={e=>setNewProduct({...newProduct, stockInicial:e.target.value})} placeholder="CANTIDAD A INGRESAR" className="w-full bg-black/60 p-3.5 rounded-xl text-xs font-black border border-white/10 text-white shadow-inner shadow-inner" required />
-                                        <button type="submit" className="w-full bg-space-orange text-white font-black py-4 rounded-xl uppercase shadow-xl hover:scale-105 active:scale-95 transition-all text-[10px] tracking-widest italic uppercase">ACTUALIZAR STOCK</button>
+                                        
+                                        <button type="submit" className="w-full bg-space-orange text-white font-black py-4 rounded-xl uppercase shadow-xl hover:scale-105 active:scale-95 transition-all text-[10px] tracking-widest italic uppercase">
+                                            {newProduct.id ? 'ACTUALIZAR DATOS' : 'ACTUALIZAR STOCK'}
+                                        </button>
+                                        
+                                        {/* REQUERIMIENTO: Botón para Cancelar Edición si está activo */}
+                                        {newProduct.id && (
+                                            <button 
+                                                type="button" 
+                                                onClick={() => setNewProduct({ id: null, sku: '', text: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' })} 
+                                                className="w-full mt-2 bg-slate-800 text-white font-black py-2.5 rounded-xl uppercase transition-all text-[10px] tracking-widest border border-white/10 hover:bg-slate-700 italic"
+                                            >
+                                                Cancelar Edición
+                                            </button>
+                                        )}
                                     </form>
                                 </div>
                                 <div className="glass-panel p-6 border-cyber-green/30 text-center space-y-4">
@@ -731,7 +753,28 @@
                                                 <thead className="bg-black/50 text-space-orange uppercase font-black text-[9px]"><tr><th className="p-4 text-white">SKU</th><th className="p-4 text-white">Nombre</th><th className="p-4 text-center text-white">Stock</th><th className="p-4 text-right text-white">ELIMINAR</th></tr></thead>
                                                 <tbody className="divide-y divide-white/5">
                                                     {productos.filter(p => p.categoria === cat).map(p => (
-                                                        <tr key={p.id} className="hover:bg-white/5 transition-all text-white"><td className="p-4 font-mono text-space-purple text-[10px] font-bold text-white">{p.sku}</td><td className="p-4 italic text-white text-[10px] truncate max-w-[200px] uppercase text-white">{p.nombre}</td><td className={`p-4 text-center font-black ${p.stockActual<10?'text-red-500 animate-pulse':'text-cyber-green'}`}>{p.stockActual}</td><td className="p-4 text-right flex justify-end gap-2 text-white"><button onClick={()=>setNewProduct({id:p.id, sku:p.sku, nombre:p.nombre, precioCosto:p.precioCosto, precioCliente:p.precioCliente, precioSocio:p.precioSocio, stockInicial:p.stockActual, categoria:p.categoria})} className="text-blue-500 hover:scale-125 transition-transform text-white"><i data-lucide="edit-3"></i></button><button onClick={async ()=>{ if(confirm('¿Borrar registro?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', p.id)); }} className="text-red-900 hover:scale-125 transition-transform text-white"><i data-lucide="trash-2" className="w-4 h-4 text-white"></i></button></td></tr>
+                                                        <tr key={p.id} className="hover:bg-white/5 transition-all text-white">
+                                                            <td className="p-4 font-mono text-space-purple text-[10px] font-bold text-white">{p.sku}</td>
+                                                            <td className="p-4 italic text-white text-[10px] truncate max-w-[200px] uppercase text-white">{p.nombre}</td>
+                                                            <td className={`p-4 text-center font-black ${p.stockActual<10?'text-red-500 animate-pulse':'text-cyber-green'}`}>{p.stockActual}</td>
+                                                            <td className="p-4 text-right flex justify-end gap-2 text-white">
+                                                                {/* REQUERIMIENTO: Botones corregidos con contraste legible sin text-white sobreescrito */}
+                                                                <button 
+                                                                    onClick={() => setNewProduct({id:p.id, sku:p.sku, nombre:p.nombre, precioCosto:p.precioCosto, precioCliente:p.precioCliente, precioSocio:p.precioSocio, stockInicial:p.stockActual, categoria:p.categoria})} 
+                                                                    className="text-blue-400 hover:text-blue-300 hover:scale-125 transition-all p-1"
+                                                                    title="Editar Producto"
+                                                                >
+                                                                    <i data-lucide="edit-3"></i>
+                                                                </button>
+                                                                <button 
+                                                                    onClick={async () => { if(confirm('¿Borrar registro?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', p.id)); }} 
+                                                                    className="text-red-500 hover:text-red-400 hover:scale-125 transition-all p-1"
+                                                                    title="Eliminar Producto"
+                                                                >
+                                                                    <i data-lucide="trash-2" className="w-4 h-4"></i>
+                                                                </button>
+                                                            </td>
+                                                        </tr>
                                                     ))}
                                                 </tbody>
                                             </table>
@@ -743,26 +786,42 @@
                     ) : (
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-500 text-white">
                             <div className="lg:col-span-4 glass-panel p-8 border-white/10 text-white shadow-2xl">
-                                <h2 className="text-lg font-black mb-8 italic uppercase border-l-4 border-white pl-4 text-white tracking-widest">Directorio Maestro</h2>
+                                <h2 className="text-lg font-black mb-8 italic uppercase border-l-4 border-white pl-4 text-white tracking-widest">
+                                    {newSujeto.id ? 'MODIFICAR SUJETO' : 'Directorio Maestro'}
+                                </h2>
                                 <form onSubmit={async (e)=>{ 
                                     e.preventDefault(); 
-                                    if(newSujeto.id) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', newSujeto.id), {nombre:newSujeto.nombre.toUpperCase(), tipo:newSujeto.tipo, telefono:newSujeto.telefono}); 
-                                    else await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), {nombre:newSujeto.nombre.toUpperCase(), tipo:newSujeto.tipo, telefono:newSujeto.tipo==='Cliente'?newSujeto.telefono:'', timestamp: Date.now()}); 
+                                    if(newSujeto.id) {
+                                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', newSujeto.id), {nombre:newSujeto.nombre.toUpperCase(), tipo:newSujeto.tipo, telefono:newSujeto.telefono}); 
+                                        mostrarNotificacion("Socio actualizado en el directorio central.");
+                                    } else {
+                                        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), {nombre:newSujeto.nombre.toUpperCase(), tipo:newSujeto.tipo, telefono:newSujeto.tipo==='Cliente'?newSujeto.telefono:'', timestamp: Date.now()}); 
+                                        mostrarNotificacion("Sujeto registrado en el directorio central.");
+                                    }
                                     setNewSujeto({id:null, nombre:'', tipo:'Cliente', telefono:''}); 
-                                    mostrarNotificacion("Sujeto registrado en el directorio central.");
                                 }} className="space-y-6">
                                     <div className="grid grid-cols-3 gap-1.5 p-1.5 bg-black/40 rounded-xl border border-white/10 shadow-inner">
                                         {['Cliente', 'Proveedor', 'Distribuidor'].map(t => <button key={t} type="button" onClick={()=>setNewSujeto({...newSujeto, tipo:t})} className={`py-3 rounded-lg text-[8px] font-black uppercase transition-all ${newSujeto.tipo===t?'bg-white text-black shadow-xl':'text-slate-600'}`}>{t}</button>)}
                                     </div>
                                     <input value={newSujeto.nombre} onChange={e=>setNewSujeto({...newSujeto, nombre:e.target.value})} placeholder="NOMBRE / ENTIDAD COMERCIAL" className="w-full p-4 bg-black/60 rounded-xl text-xs font-black border border-white/5 focus:border-white shadow-inner text-white outline-none uppercase" required />
-                                    {newSujeto.tipo === 'Cliente' && <input value={newSujeto.telefono} onChange={e=>setNewSujeto({...newSujeto, telefono:e.target.value})} placeholder="TELÉFONO CLIENTE" className="w-full p-4 bg-black/60 rounded-xl text-xs font-black border border-white/5 focus:border-white shadow-inner text-white outline-none shadow-inner" />}
+                                    <input value={newSujeto.telefono} onChange={e=>setNewSujeto({...newSujeto, telefono:e.target.value})} placeholder="TELÉFONO / UPLINK" className="w-full p-4 bg-[#1a1a24] rounded-xl text-xs font-black border border-white/5 focus:border-white shadow-inner text-white outline-none shadow-inner" />
                                     <button type="submit" className="w-full bg-white text-black font-black py-4 rounded-xl uppercase tracking-widest shadow-2xl hover:scale-105 active:scale-95 transition-all text-xs tracking-widest italic uppercase">REGISTRAR SUJETO</button>
+                                    
+                                    {newSujeto.id && (
+                                        <button 
+                                            type="button" 
+                                            onClick={() => setNewSujeto({ id: null, nombre: '', tipo: 'Cliente', telefono: '' })} 
+                                            className="w-full mt-2 bg-slate-800 text-white font-black py-2.5 rounded-xl uppercase transition-all text-[10px] tracking-widest border border-white/10 hover:bg-slate-700 italic"
+                                        >
+                                            Cancelar Edición
+                                        </button>
+                                    )}
                                 </form>
                                 <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
                                     <h3 className="text-[10px] font-black uppercase text-cyber-green italic text-center tracking-widest">ACTUALIZACION MASIVA</h3>
                                     <input type="file" ref={fileSujRef} onChange={(e) => uploadExcel(e, 'SUJETOS')} className="hidden" accept=".xlsx, .xls" />
                                     <div className="grid grid-cols-2 gap-2 text-white">
-                                        <button onClick={() => fileSujRef.click()} disabled={isSyncing} className="py-3 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">CARGAR ARCHIVO</button>
+                                        <button onClick={() => fileSujRef.current.click()} disabled={isSyncing} className="py-3 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">CARGAR ARCHIVO</button>
                                         <button onClick={() => downloadTemplate('SUJETOS')} className="py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">PLANTILLA</button>
                                     </div>
                                 </div>
@@ -779,7 +838,7 @@
                                                     <td className="p-6 text-white text-[11px] font-bold transition-all text-white uppercase text-white">{s.nombre}</td>
                                                     <td className="p-6 text-right flex justify-end gap-3 opacity-30 group-hover:opacity-100 transition-opacity">
                                                         <button onClick={()=>setNewSujeto({id:s.id, nombre:s.nombre, tipo:s.tipo, telefono:s.telefono})} className="text-blue-400 hover:scale-125 transition-transform text-white"><i data-lucide="edit-3"></i></button>
-                                                        <button onClick={async ()=>{ if(confirm('¿Anular registro?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', s.id)); }} className="text-red-600 hover:scale-125 transition-transform text-white"><i data-lucide="trash-2" className="w-4 h-4 text-white"></i></button>
+                                                        <button onClick={async ()=>{ if(confirm('¿Anular registro permanentemente?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', s.id)); }} className="text-red-600 hover:scale-125 transition-transform text-white"><i data-lucide="trash-2" className="w-4 h-4 text-white"></i></button>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -794,7 +853,7 @@
         };
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        root.render(<App />); // Corrección del cierre de renderizado de React 18
         
         onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), () => {
              setTimeout(() => { if(window.lucide) lucide.createIcons(); }, 500);
