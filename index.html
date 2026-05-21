@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FERCO FARMA | REGISTROS DE BODEGA v18.0</title>
+    <title>FERCO FARMA | REGISTROS DE BODEGA v18.1</title>
     
     <!-- Motores de Estilo y UI -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -120,16 +120,28 @@
             return CryptoJS.AES.encrypt(String(val), key).toString();
         };
 
+        // REQUERIMIENTO: Capa de Tolerancia a Fallos y Compatibilidad Heredada
         const decryptVal = (cipher, key, isNumeric = false) => {
-            if (!cipher || !key) return isNumeric ? 0 : '';
+            if (cipher === undefined || cipher === null || cipher === '') {
+                return isNumeric ? 0 : '';
+            }
+            if (!key) {
+                return isNumeric ? (parseFloat(cipher) || 0) : String(cipher);
+            }
             try {
+                // Si el dato no es un string o no parece encriptado, devolvemos directo como fallback heredado
+                if (typeof cipher !== 'string') {
+                    return isNumeric ? (parseFloat(cipher) || 0) : cipher;
+                }
                 const bytes = CryptoJS.AES.decrypt(cipher, key);
                 const decrypted = bytes.toString(CryptoJS.enc.Utf8);
-                if (!decrypted) return isNumeric ? 0 : '';
-                return isNumeric ? (parseFloat(decrypted) || 0) : decrypted;
+                if (decrypted !== '') {
+                    return isNumeric ? (parseFloat(decrypted) || 0) : decrypted;
+                }
             } catch (e) {
-                return isNumeric ? 0 : '[Error de Descifrado]';
+                // Error al descifrar -> Se asume con seguridad que es texto plano antiguo
             }
+            return isNumeric ? (parseFloat(cipher) || 0) : String(cipher);
         };
 
         const App = () => {
@@ -210,7 +222,7 @@
                 setTimeout(() => setNotificacion({ show: false, mensaje: '', tipo: 'success' }), 4500);
             };
 
-            // --- DECRYPTION IN MEMORY (MAPEO DE SEGURIDAD) ---
+            // --- DECRYPTION IN MEMORY (MAPEO DE SEGURIDAD CON DETECCIÓN DE DATOS HEREDADOS) ---
             const decryptedProductos = useMemo(() => {
                 if (isVaultLocked || !vaultKey) return [];
                 return productos.map(p => ({
@@ -233,20 +245,47 @@
                     let decPagos = [];
                     let decSplit = { ferco: 0, hades: 0 };
                     
-                    try {
-                        const strItems = decryptVal(v.items, vaultKey);
-                        if (strItems) decItems = JSON.parse(strItems);
-                    } catch(e) {}
+                    // REQUERIMIENTO: Evaluar si el campo Items es un array (Heredado) o string cifrado (Nuevo)
+                    if (v.items) {
+                        if (Array.isArray(v.items)) {
+                            decItems = v.items;
+                        } else {
+                            try {
+                                const strItems = decryptVal(v.items, vaultKey);
+                                if (strItems) decItems = JSON.parse(strItems);
+                            } catch(e) {
+                                try { decItems = JSON.parse(v.items); } catch(err) {}
+                            }
+                        }
+                    }
                     
-                    try {
-                        const strPagos = decryptVal(v.pagos, vaultKey);
-                        if (strPagos) decPagos = JSON.parse(strPagos);
-                    } catch(e) {}
+                    // REQUERIMIENTO: Evaluar si el campo Pagos es un array (Heredado) o string cifrado (Nuevo)
+                    if (v.pagos) {
+                        if (Array.isArray(v.pagos)) {
+                            decPagos = v.pagos;
+                        } else {
+                            try {
+                                const strPagos = decryptVal(v.pagos, vaultKey);
+                                if (strPagos) decPagos = JSON.parse(strPagos);
+                            } catch(e) {
+                                try { decPagos = JSON.parse(v.pagos); } catch(err) {}
+                            }
+                        }
+                    }
 
-                    try {
-                        const strSplit = decryptVal(v.split, vaultKey);
-                        if (strSplit) decSplit = JSON.parse(strSplit);
-                    } catch(e) {}
+                    // REQUERIMIENTO: Evaluar si el campo Split es un objeto (Heredado) o string cifrado (Nuevo)
+                    if (v.split) {
+                        if (typeof v.split === 'object' && !v.split.ciphertext) {
+                            decSplit = v.split;
+                        } else {
+                            try {
+                                const strSplit = decryptVal(v.split, vaultKey);
+                                if (strSplit) decSplit = JSON.parse(strSplit);
+                            } catch(e) {
+                                if (typeof v.split === 'object') decSplit = v.split;
+                            }
+                        }
+                    }
 
                     return {
                         id: v.id,
@@ -330,7 +369,6 @@
                 if (!inputKey) return;
 
                 if (!vaultAuthDoc) {
-                    // Primer Inicio: Establecer Clave Maestra
                     const verificationToken = encryptVal("FERCO_VAULT_ACTIVE", inputKey);
                     setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vault_control', 'auth'), {
                         token: verificationToken
@@ -340,7 +378,6 @@
                         mostrarNotificacion("Bóveda Criptográfica Establecida y Desbloqueada.");
                     });
                 } else {
-                    // Validar Clave
                     const decryptedCheck = decryptVal(vaultAuthDoc.token, inputKey);
                     if (decryptedCheck === 'FERCO_VAULT_ACTIVE') {
                         setVaultKey(inputKey);
@@ -351,19 +388,6 @@
                         setVaultError("⚠️ Clave Incorrecta. Los datos permanecen cifrados.");
                     }
                 }
-            };
-
-            // --- LÓGICA DE INTERFAZ ---
-            const getNextSKU = (cat, tempProductosList) => {
-                const prefixMap = { 'Producto Final': 'PFNASA-', 'Insumo': 'INASA-', 'Empaque': 'ENASA-' };
-                const prefix = prefixMap[cat] || 'PFNASA-';
-                const listToScan = tempProductosList || decryptedProductos;
-                const nums = listToScan.filter(p => p.sku?.startsWith(prefix)).map(p => {
-                    const m = p.sku.match(/\d+/);
-                    return m ? parseInt(m[0]) : 0;
-                });
-                const next = Math.max(0, ...nums) + 1;
-                return `${prefix}${String(next).padStart(3, '0')}`;
             };
 
             const selectProduct = (p) => {
@@ -385,7 +409,6 @@
                 if (carrito.length === 0 || (totalAbonado < totalOp && datosVenta.entidad !== 'Proveedor')) return;
                 try {
                     const ahora = new Date();
-                    // Inyectar datos encriptados a la base de datos cloud
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), {
                         entidad: datosVenta.entidad,
                         canal: datosVenta.canal,
@@ -420,7 +443,6 @@
                 } catch (err) { mostrarNotificacion("Falla de sincronización.", "error"); }
             };
 
-            // --- FUNCIÓN PARA SALDAR DESPACHO DESDE CARTERA ---
             const ejecutarSaldadoDespacho = async (e) => {
                 e.preventDefault();
                 const { venta, nuevoMetodo, montoEfectivo, fechaEfectiva, observacionCierre } = saldarModal;
@@ -478,7 +500,6 @@
                 setNewProduct({ id: null, sku: '', text: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
             };
 
-            // --- MOTOR DE CARGA MASIVA ENCRIPTADA ---
             const uploadExcel = async (e, type) => {
                 const file = e.target.files[0];
                 if (!file) return;
@@ -755,7 +776,7 @@
                             <img src="logo.jpg" alt="L" className="w-12 h-12 rounded-xl shadow-xl border border-white/10" />
                             <div>
                                 <h1 className="text-3xl font-black italic tracking-tighter uppercase">FERCO <span className="text-space-orange">FARMA</span></h1>
-                                <p className="text-[7px] uppercase tracking-[0.5em] font-black text-space-purple opacity-60">REGISTROS DE BODEGA v18.0</p>
+                                <p className="text-[7px] uppercase tracking-[0.5em] font-black text-space-purple opacity-60">REGISTROS DE BODEGA v18.1</p>
                             </div>
                         </div>
                         <nav className="flex flex-wrap gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
@@ -1037,6 +1058,7 @@
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-500 text-white">
                             <div className="lg:col-span-4 space-y-6 text-white text-white">
                                 <div className="glass-panel p-6 border-space-orange/30 shadow-xl text-white">
+                                    {/* Título dinámico */}
                                     <h2 className="text-[10px] font-black mb-6 uppercase text-space-orange italic border-l-4 border-space-purple pl-3">
                                         {newProduct.id ? 'MODIFICAR PRODUCTO' : 'INGRESAR A INVENTARIO'}
                                     </h2>
