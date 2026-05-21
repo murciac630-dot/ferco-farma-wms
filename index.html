@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FERCO FARMA | REGISTROS DE BODEGA v19.1</title>
+    <title>FERCO FARMA | REGISTROS DE BODEGA v19.4</title>
     
     <!-- Motores de Estilo y UI -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -132,6 +132,16 @@
             return isNumeric ? (parseFloat(cipher) || 0) : String(cipher);
         };
 
+        // REQUERIMIENTO: Normalizador de Categorías para evitar "Productos Fantasma" en base de datos
+        const normalizarCategoria = (cat) => {
+            if (!cat) return 'Producto Final';
+            const clean = cat.trim().toLowerCase();
+            if (clean.includes('final')) return 'Producto Final';
+            if (clean.includes('insumo')) return 'Insumo';
+            if (clean.includes('empaque')) return 'Empaque';
+            return 'Producto Final'; // Fallback por defecto seguro
+        };
+
         const App = () => {
             const [user, setUser] = useState(null);
             const [productos, setProductos] = useState([]);
@@ -208,16 +218,23 @@
                 setTimeout(() => setNotificacion({ show: false, mensaje: '', tipo: 'success' }), 4500);
             };
 
-            // --- DECRYPTION IN MEMORY (TOLERANCIA A DATOS HEREDADOS) ---
+            // --- DECRYPTION IN MEMORY (TOLERANCIA A DATOS HEREDADOS Y SANEAMIENTO DE GHOSTS) ---
             const decryptedProductos = useMemo(() => {
                 if (isVaultLocked || !vaultKey) return [];
-                return productos.map(p => ({
-                    id: p.id, sku: p.sku, categoria: p.categoria, stockActual: p.stockActual, stockInicial: p.stockInicial,
-                    nombre: decryptVal(p.nombre, vaultKey),
-                    precioCosto: decryptVal(p.precioCosto, vaultKey, true),
-                    precioCliente: decryptVal(p.precioCliente, vaultKey, true),
-                    precioSocio: decryptVal(p.precioSocio, vaultKey, true)
-                }));
+                return productos.map(p => {
+                    const catNorm = normalizarCategoria(p.categoria); // Sanitizar categoría en la lectura
+                    return {
+                        id: p.id, 
+                        sku: p.sku || 'SIN-SKU', 
+                        categoria: catNorm, 
+                        stockActual: p.stockActual !== undefined ? p.stockActual : 0, 
+                        stockInicial: p.stockInicial !== undefined ? p.stockInicial : 0,
+                        nombre: decryptVal(p.nombre, vaultKey) || 'PRODUCTO DESCONOCIDO',
+                        precioCosto: decryptVal(p.precioCosto, vaultKey, true),
+                        precioCliente: decryptVal(p.precioCliente, vaultKey, true),
+                        precioSocio: decryptVal(p.precioSocio, vaultKey, true)
+                    };
+                });
             }, [productos, isVaultLocked, vaultKey]);
 
             const decryptedVentas = useMemo(() => {
@@ -264,9 +281,15 @@
                 }));
             }, [sujetos, isVaultLocked, vaultKey]);
 
-            // --- REFACTORIZACIÓN INVENTARIO ESTÁTICO (O(1) LECTURA) ---
+            // --- REFACTORIZACIÓN INVENTARIO ESTÁTICO (O(1) LECTURA) CON ORDEN NUMÉRICO NATURAL ASCENDENTE ---
             const inventarioActualizado = useMemo(() => {
-                return decryptedProductos; 
+                return [...decryptedProductos].sort((a, b) => {
+                    // Extraer los dígitos numéricos del SKU (ej: "PFNASA-002" -> 2)
+                    const numA = parseInt(a.sku?.match(/\d+/)?.[0] || 0, 10);
+                    const numB = parseInt(b.sku?.match(/\d+/)?.[0] || 0, 10);
+                    if (numA !== numB) return numA - numB;
+                    return (a.sku || '').localeCompare(b.sku || '');
+                });
             }, [decryptedProductos]);
 
             // --- CONTROLES GENERALES DE CÁLCULO ---
@@ -316,18 +339,96 @@
                 return Object.values(stats).sort((a,b) => b.total - a.total).slice(0, 5);
             }, [decryptedVentas]);
 
-            // --- PROTOCOLO CLAVE MAESTRA ---
+            // --- REQUERIMIENTO: AUTO-LLENAR NOMBRE DE PRODUCTO EN DESPACHOS AL COINCIDIR SKU ---
+            useEffect(() => {
+                const term = itemActual.sku.trim().toUpperCase();
+                if (term.length > 1) {
+                    const p = inventarioActualizado.find(x => x.sku.toUpperCase() === term);
+                    if (p && !itemActual.productoId) {
+                        let v = 0;
+                        if (datosVenta.entidad === 'Proveedor') v = p.precioCosto || 0;
+                        else if (datosVenta.entidad === 'Distribuidor' || datosVenta.canal === 'Hades') v = p.precioSocio || 0;
+                        else v = p.precioCliente || 0;
+                        setItemActual(prev => ({ ...prev, productoId: p.id, nombre: p.nombre, valorUnitario: v }));
+                    }
+                }
+            }, [itemActual.sku, datosVenta.entidad, datosVenta.canal, inventarioActualizado]);
+
+            // --- REQUERIMIENTO: AUTO-LLENAR CAMPOS EN INVENTARIO CUANDO SE SELECCIONA/ESCRIBE SKU EXISTENTE ---
+            useEffect(() => {
+                const skuTerm = newProduct.sku.trim().toUpperCase();
+                if (skuTerm.length > 0) {
+                    const p = inventarioActualizado.find(x => x.sku.toUpperCase() === skuTerm);
+                    if (p && (!newProduct.id || newProduct.id !== p.id)) {
+                        setNewProduct({
+                            id: p.id,
+                            sku: p.sku,
+                            nombre: p.nombre,
+                            precioCosto: p.precioCosto,
+                            precioCliente: p.precioCliente,
+                            precioSocio: p.precioSocio,
+                            stockInicial: p.stockInicial,
+                            categoria: p.categoria
+                        });
+                    }
+                }
+            }, [newProduct.sku, inventarioActualizado]);
+
+            // --- REQUERIMIENTO: AUTO-GENERACIÓN DE SKU AL ESCRIBIR NOMBRE EN INVENTARIO ---
+            const handleNewProductNameChange = (nombreVal) => {
+                let skuVal = newProduct.sku;
+                // Genera el consecutivo dinámico solo si no estamos editando y el SKU está vacío
+                if (!newProduct.id && (!newProduct.sku || newProduct.sku.trim() === '')) {
+                    skuVal = getNextSKU(newProduct.categoria);
+                }
+                setNewProduct(prev => ({
+                    ...prev,
+                    nombre: nombreVal,
+                    sku: skuVal
+                }));
+            };
+
+            // Recalcular SKU al cambiar de categoría si es un producto nuevo
+            const handleCategoryChange = (cat) => {
+                let skuVal = newProduct.sku;
+                if (!newProduct.id && (!newProduct.sku || newProduct.sku.startsWith('PFNASA-') || newProduct.sku.startsWith('INASA-') || newProduct.sku.startsWith('ENASA-') || newProduct.sku.trim() === '')) {
+                    skuVal = getNextSKU(cat);
+                }
+                setNewProduct(prev => ({
+                    ...prev,
+                    categoria: cat,
+                    sku: skuVal
+                }));
+            };
+
+            // --- PROTOCOLO CLAVE MAESTRA (RE-ESTABLECIDO EXCEPCIONALMENTE) ---
             const handleUnlockVault = (e) => {
-                e.preventDefault(); if (!inputKey) return;
+                e.preventDefault();
+                if (!inputKey) return;
+
                 if (!vaultAuthDoc) {
+                    // Primer Inicio: Establecer Clave Maestra en la Nube
                     const verificationToken = encryptVal("FERCO_VAULT_ACTIVE", inputKey);
-                    setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vault_control', 'auth'), { token: verificationToken }).then(() => {
-                        setVaultKey(inputKey); setIsVaultLocked(false); mostrarNotificacion("Bóveda Criptográfica Establecida.");
+                    setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vault_control', 'auth'), {
+                        token: verificationToken
+                    }).then(() => {
+                        setVaultKey(inputKey);
+                        setIsVaultLocked(false);
+                        mostrarNotificacion("Bóveda Criptográfica Establecida y Desbloqueada.");
+                    }).catch(() => {
+                        setVaultError("Error al inicializar la bóveda en la nube.");
                     });
                 } else {
-                    if (decryptVal(vaultAuthDoc.token, inputKey) === 'FERCO_VAULT_ACTIVE') {
-                        setVaultKey(inputKey); setIsVaultLocked(false); setVaultError(''); mostrarNotificacion("Bóveda Criptográfica Abierta.");
-                    } else setVaultError("⚠️ Clave Incorrecta.");
+                    // Validación de Clave Existente
+                    const decryptedCheck = decryptVal(vaultAuthDoc.token, inputKey);
+                    if (decryptedCheck === 'FERCO_VAULT_ACTIVE') {
+                        setVaultKey(inputKey);
+                        setIsVaultLocked(false);
+                        setVaultError('');
+                        mostrarNotificacion("Bóveda Criptográfica Abierta.");
+                    } else {
+                        setVaultError("⚠️ Clave Incorrecta. Los datos permanecen cifrados.");
+                    }
                 }
             };
 
@@ -383,6 +484,10 @@
                 if (carrito.length === 0 || (totalAbonado < totalOp && datosVenta.entidad !== 'Proveedor')) return;
                 
                 try {
+                    // Evaluación reactiva al instante para inyectar el estado real del despacho
+                    const tieneMetodosCredito = pagos.some(p => ['Crédito', 'Cruce', 'Artículo en Garantía'].includes(p.metodo));
+                    const estadoInicial = tieneMetodosCredito ? 'Pendiente' : 'Pagado';
+
                     const dataPayload = {
                         entidad: datosVenta.entidad, canal: datosVenta.canal, cuentaDestino: datosVenta.cuentaDestino,
                         nombreEntidad: encryptVal(datosVenta.nombreEntidad, vaultKey),
@@ -412,7 +517,7 @@
                             netChanges[pid] += datosVenta.entidad === 'Proveedor' ? cant : -cant;
                         });
 
-                        // Sincronización transaccional
+                        // Sincronización transaccional de stock
                         for (const pid of Object.keys(netChanges)) {
                             const diff = netChanges[pid];
                             if (diff === 0) continue;
@@ -425,9 +530,11 @@
                             }
                         }
 
+                        // Guardar la venta modificada
                         const ref = doc(db, 'artifacts', appId, 'public', 'data', 'ventas', editingVentaId);
                         await updateDoc(ref, {
                             ...dataPayload,
+                            estado: estadoInicial,
                             auditLog: `MODIFICADO: ${datosVenta.responsable} el ${new Date().toLocaleDateString()}`
                         });
 
@@ -435,10 +542,12 @@
                         setOldItems([]);
                         mostrarNotificacion("Registro de despacho actualizado de forma segura.");
                     } else {
-                        // BIFURCACIÓN: Inyección de documento nuevo
+                        // Inyección de documento nuevo
                         const ahora = new Date();
                         await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), {
-                            ...dataPayload, estado: 'Pendiente', timestamp: Date.now(),
+                            ...dataPayload, 
+                            estado: estadoInicial, 
+                            timestamp: Date.now(),
                             fecha: ahora.toLocaleDateString(), hora: ahora.toLocaleTimeString(),
                             auditLog: `OP: ${datosVenta.responsable} | CANAL: ${datosVenta.canal}`
                         });
@@ -480,17 +589,29 @@
             };
 
             const upsertProd = async (e) => {
-                e.preventDefault(); const skuF = newProduct.sku.trim() || getNextSKU(newProduct.categoria);
+                e.preventDefault(); 
+                const skuF = newProduct.sku.trim() || getNextSKU(newProduct.categoria);
+                const normalizedCat = normalizarCategoria(newProduct.categoria); // Sanitizar categoría al guardar
+
                 const encryptedData = { 
-                    sku: skuF, categoria: newProduct.categoria, nombre: encryptVal(newProduct.nombre.toUpperCase(), vaultKey), 
-                    precioCosto: encryptVal(newProduct.precioCosto, vaultKey), precioSocio: encryptVal(newProduct.precioSocio, vaultKey),
-                    precioCliente: newProduct.categoria === 'Empaque' ? encryptVal(0, vaultKey) : encryptVal(newProduct.precioCliente, vaultKey),
-                    stockActual: parseFloat(newProduct.stockInicial) || 0, stockInicial: parseFloat(newProduct.stockInicial) || 0, timestamp: Date.now()
+                    sku: skuF, 
+                    categoria: normalizedCat, 
+                    nombre: encryptVal(newProduct.nombre.toUpperCase(), vaultKey), 
+                    precioCosto: encryptVal(newProduct.precioCosto, vaultKey), 
+                    precioSocio: encryptVal(newProduct.precioSocio, vaultKey),
+                    precioCliente: normalizedCat === 'Empaque' ? encryptVal(0, vaultKey) : encryptVal(newProduct.precioCliente, vaultKey),
+                    stockActual: parseFloat(newProduct.stockInicial) || 0, 
+                    stockInicial: parseFloat(newProduct.stockInicial) || 0, 
+                    timestamp: Date.now()
                 };
-                if (newProduct.id) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', newProduct.id), encryptedData);
-                else await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), encryptedData);
+
+                if (newProduct.id) {
+                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', newProduct.id), encryptedData);
+                } else {
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), encryptedData);
+                }
                 setNewProduct({ id: null, sku: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
-                mostrarNotificacion("Catálogo actualizado.");
+                mostrarNotificacion("Catálogo de inventarios actualizado.");
             };
 
             // --- MOTOR DE CARGA MASIVA SIN CONFLICTOS DE CARRERA (RACE CONDITIONS) ---
@@ -507,7 +628,8 @@
                             let creados = 0; let actualizados = 0;
 
                             for (const row of data) {
-                                let skuE = String(row.SKU || "").trim().toUpperCase(); const cat = row.Categoria || 'Producto Final';
+                                let skuE = String(row.SKU || "").trim().toUpperCase(); 
+                                const cat = normalizarCategoria(row.Categoria || 'Producto Final'); // Normalizar la categoría importada
                                 if (!skuE) skuE = getNextSKU(cat, currentBatch);
                                 
                                 const exist = currentBatch.find(p => p.sku.toUpperCase() === skuE); 
@@ -580,12 +702,75 @@
                 }; reader.readAsBinaryString(file);
             };
 
+            const getNextSKU = (cat, tempProductosList) => {
+                const prefixMap = { 'Producto Final': 'PFNASA-', 'Insumo': 'INASA-', 'Empaque': 'ENASA-' };
+                const prefix = prefixMap[cat] || 'PFNASA-';
+                const listToScan = tempProductosList || inventarioActualizado;
+                const nums = listToScan.filter(p => p.sku?.startsWith(prefix)).map(p => {
+                    const m = p.sku.match(/\d+/);
+                    return m ? parseInt(m[0], 10) : 0;
+                });
+                const next = Math.max(0, ...nums) + 1;
+                return `${prefix}${String(next).padStart(3, '0')}`;
+            };
+
             const uploadTemplate = (type) => downloadTemplate(type);
+            
+            // REQUERIMIENTO: Plantillas inteligentes con datos reales del catálogo para edición fluida
             const downloadTemplate = (type) => {
                 let data = [];
-                if (type === 'INVENTARIO') data = [{ SKU: "", Nombre: "ACETAMINOFEN", Categoria: "Producto Final", Costo: 1000, Precio_Cliente: 1500, Precio_Socio: 1200, Stock: 50 }];
-                if (type === 'SUJETOS') data = [{ Nombre: "JUAN PEREZ", Tipo: "Cliente", Telefono: "300123456" }];
-                if (type === 'DESPACHOS') data = [{ Fecha: "15/05/2026", Hora: "09:00:00", Sujeto: "JUAN PEREZ", Tipo_Sujeto: "Cliente", Canal: "Ferco Farma", SKU: "PFNASA-001", Cantidad: 1, Valor_Uni: 1500, Total: 1500, Metodo: "Efectivo", Obs: "Carga", Cuenta_Ingreso: "CRIS", Estado: "Pendiente" }];
+                if (type === 'INVENTARIO') {
+                    if (inventarioActualizado.length > 0) {
+                        data = inventarioActualizado.map(p => ({
+                            SKU: p.sku,
+                            Nombre: p.nombre,
+                            Categoria: p.categoria,
+                            Costo: p.precioCosto,
+                            Precio_Cliente: p.precioCliente,
+                            Precio_Socio: p.precioSocio,
+                            Stock: p.stockActual
+                        }));
+                    } else {
+                        data = [{ SKU: "PFNASA-001", Nombre: "ACETAMINOFEN", Categoria: "Producto Final", Costo: 1000, Precio_Cliente: 1500, Precio_Socio: 1200, Stock: 50 }];
+                    }
+                }
+                if (type === 'SUJETOS') {
+                    if (decryptedSujetos.length > 0) {
+                        data = decryptedSujetos.map(s => ({
+                            Nombre: s.nombre,
+                            Tipo: s.tipo,
+                            Telefono: s.telefono
+                        }));
+                    } else {
+                        data = [{ Nombre: "JUAN PEREZ", Tipo: "Cliente", Telefono: "300123456" }];
+                    }
+                }
+                if (type === 'DESPACHOS') {
+                    if (decryptedVentas.length > 0) {
+                        data = [];
+                        decryptedVentas.forEach(v => {
+                            (v.items || []).forEach(it => {
+                                data.push({
+                                    Fecha: v.fecha,
+                                    Hora: v.hora,
+                                    Sujeto: v.nombreEntidad,
+                                    Tipo_Sujeto: v.entidad,
+                                    Canal: v.canal,
+                                    SKU: it.sku,
+                                    Cantidad: it.cantidad,
+                                    Valor_Uni: it.valorUnitario,
+                                    Total: v.totalVenta,
+                                    Metodo: v.pagos?.map(p => p.metodo).join(', ') || 'Efectivo',
+                                    Obs: v.pagos?.map(p => p.comentario).filter(Boolean).join(' | ') || '',
+                                    Cuenta_Ingreso: v.cuentaDestino || 'CRIS',
+                                    Estado: v.estado || 'Pagado'
+                                });
+                            });
+                        });
+                    } else {
+                        data = [{ Fecha: "15/05/2026", Hora: "09:00:00", Sujeto: "JUAN PEREZ", Tipo_Sujeto: "Cliente", Canal: "Ferco Farma", SKU: "PFNASA-001", Cantidad: 1, Valor_Uni: 1500, Total: 1500, Metodo: "Efectivo", Obs: "Carga", Cuenta_Ingreso: "CRIS", Estado: "Pendiente" }];
+                    }
+                }
                 const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Plantilla"); XLSX.writeFile(wb, `PLANTILLA_${type}.xlsx`);
             };
             const exportarPlantilla = () => downloadTemplate('INVENTARIO');
@@ -607,7 +792,7 @@
                 return (
                     <div className="flex h-screen items-center justify-center bg-[#020206] p-4 text-white font-sans relative">
                         <div className="scanline"></div>
-                        <div className="glass-panel max-w-md w-full p-8 space-y-6 border border-[#9333ea]/30 text-center shadow-[0_0_50px_rgba(147,51,234,0.15)]">
+                        <div className="glass-panel max-w-md w-full p-8 space-y-6 border border-[#9333ea]/30 text-center shadow-[0_0_50px_rgba(147,51,234,0.15)] animate-in fade-in duration-300">
                             <div className="flex justify-center mb-2">
                                 <div className="p-4 bg-space-purple/10 rounded-full border border-space-purple/20 animate-pulse"><i data-lucide="shield-alert" className="w-12 h-12 text-space-purple"></i></div>
                             </div>
@@ -664,7 +849,7 @@
                     <header className="flex flex-col lg:flex-row justify-between items-center mb-8 gap-6 border-b border-white/5 pb-6">
                         <div className="flex items-center gap-4 text-white">
                             <img src="logo.jpg" alt="L" className="w-12 h-12 rounded-xl border border-white/10 shadow-xl" />
-                            <div><h1 className="text-3xl font-black italic tracking-tighter uppercase">FERCO <span className="text-space-orange">FARMA</span></h1><p className="text-[7px] uppercase tracking-[0.5em] font-black text-space-purple opacity-60">REGISTROS DE BODEGA v19.1</p></div>
+                            <div><h1 className="text-3xl font-black italic tracking-tighter uppercase">FERCO <span className="text-space-orange">FARMA</span></h1><p className="text-[7px] uppercase tracking-[0.5em] font-black text-space-purple opacity-60">REGISTROS DE BODEGA v19.4</p></div>
                         </div>
                         <nav className="flex flex-wrap gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
                             {['dashboard', 'despacho', 'inventario', 'directorio'].map(v => (<button key={v} onClick={() => setView(v)} className={`px-5 py-2 rounded-lg font-black text-[9px] uppercase transition-all ${view===v?'bg-white text-black shadow-xl':'text-slate-500 hover:text-white'}`}>{v.toUpperCase()}</button>))}
@@ -735,7 +920,15 @@
                                     <div className="space-y-3">
                                         {/* Selección de Productos */}
                                         <div className="relative">
-                                            <input type="text" value={itemActual.sku} onFocus={() => setShowProductList(true)} onChange={(e)=>setItemActual({...itemActual, sku: e.target.value, productoId:''})} placeholder="SKU / PRODUCTO..." className="w-full p-3 bg-black/60 rounded-xl text-xs border border-white/10 focus:border-space-purple outline-none font-bold uppercase text-white shadow-inner" />
+                                            <input type="text" value={itemActual.sku} onFocus={() => setShowProductList(true)} onChange={(e)=>setItemActual({...itemActual, sku: e.target.value, productoId:''})} placeholder="SKU / PRODUCTO..." className="w-full p-3 bg-black/60 rounded-xl text-xs border border-[#00f3ff]/20 focus:border-space-purple outline-none font-bold uppercase text-white shadow-inner" />
+                                            
+                                            {/* REQUERIMIENTO: Confirmación de Llenado Visual del Nombre de Producto en ingreso */}
+                                            {itemActual.nombre && (
+                                                <div className="text-[10px] text-cyber-green font-black uppercase mt-1">
+                                                    ✓ Seleccionado: {itemActual.nombre}
+                                                </div>
+                                            )}
+
                                             {showProductList && (
                                                 <div className="selectable-list">
                                                     {inventarioActualizado.filter(p => p.sku.toLowerCase().includes(itemActual.sku.toLowerCase()) || p.nombre.toLowerCase().includes(itemActual.sku.toLowerCase())).map(p => (
@@ -756,7 +949,7 @@
                                             <input type="number" value={itemActual.cantidad} onChange={e=>setItemActual({...itemActual, cantidad:e.target.value})} placeholder="Cantidad" className="bg-black/60 p-3 rounded-xl text-xs border border-white/5 font-black text-white" />
                                             <input type="number" value={itemActual.valorUnitario} onChange={e=>setItemActual({...itemActual, valorUnitario:e.target.value})} placeholder="VALOR $" className="bg-black/60 p-3 rounded-xl text-xs text-cyber-green font-black border border-white/5 outline-none focus:border-white" />
                                         </div>
-                                        <button type="button" onClick={()=>{ if(!itemActual.productoId || !itemActual.cantidad) return; setCarrito([...carrito, { ...itemActual, idT: Date.now() }]); setItemActual({sku:'', nombre:'', productoId:'', cantidad:1, valorUnitario:0, fraccion: 1}); }} className="w-full py-3 bg-space-purple/10 text-space-purple border border-space-purple/30 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-md">AGREGAR A COMPRA</button>
+                                        <button type="button" onClick={()=>{ if(!itemActual.productoId || !itemActual.cantidad) return; setCarrito([...carrito, { ...itemActual, idT: Date.now(), subtotal: parseFloat(itemActual.cantidad) * itemActual.fraccion * parseFloat(itemActual.valorUnitario) }]); setItemActual({sku:'', nombre:'', productoId:'', cantidad:1, valorUnitario:0, fraccion: 1}); }} className="w-full py-3 bg-space-purple/10 text-space-purple border border-space-purple/30 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-md">AGREGAR A COMPRA</button>
                                     </div>
 
                                     {/* HADES SPLIT */}
@@ -776,8 +969,8 @@
                                                         <tr key={it.idT} className="border-b border-white/5">
                                                             <td className="py-2 truncate max-w-[120px]">{it.nombre}</td>
                                                             <td className="text-center">{it.cantidad * it.fraccion} Uni</td>
-                                                            <td className="text-right text-cyber-green font-mono">${(it.cantidad * it.fraccion * it.valorUnitario).toLocaleString()}</td>
-                                                            <td className="text-right"><button type="button" onClick={()=>setCarrito(carrito.filter(i=>i.idT!==it.idT))} className="text-red-500 pl-3">x</button></td>
+                                                            <td className="text-right text-cyber-green font-mono">${(it.subtotal || 0).toLocaleString()}</td>
+                                                            <td className="text-right"><button type="button" onClick={()=>setCarrito(carrito.filter(x=>x.idT!==it.idT))} className="text-red-500 pl-3">x</button></td>
                                                         </tr>
                                                     ))}
                                                 </tbody>
@@ -859,8 +1052,8 @@
                                             <thead className="bg-[#101018] text-slate-500 uppercase font-black sticky top-0"><tr><th className="p-5 py-4">TimeStamp</th><th className="p-5 py-4">Sujeto</th><th className="p-5 py-4 text-center">Total</th><th className="p-5 py-4 text-right">Acción</th></tr></thead>
                                             <tbody className="divide-y divide-white/5">
                                                 {decryptedVentas.map(v => {
-                                                    // REQUERIMIENTO: Evaluación reactiva del estado y métodos de pago pendientes para mostrar "Saldar" de forma condicional
-                                                    const tienePendiente = v.estado === 'Pendiente' || (v.pagos && v.pagos.some(p => ['Crédito', 'Cruce', 'Artículo en Garantía'].includes(p.metodo)));
+                                                    // REQUERIMIENTO: Evaluación reactiva estricta para mostrar el botón de "Saldar" de forma verdaderamente condicional
+                                                    const tienePendiente = v.estado !== 'Pagado' && (v.pagos && v.pagos.some(p => ['Crédito', 'Cruce', 'Artículo en Garantía'].includes(p.metodo)));
                                                     
                                                     return (
                                                         <tr key={v.id} className="hover:bg-white/5 transition-all border-l-4 border-l-transparent hover:border-l-space-purple">
@@ -868,7 +1061,7 @@
                                                             <td className="p-5 font-black uppercase truncate max-w-[140px]">{v.nombreEntidad}</td>
                                                             <td className="p-5 text-center font-black text-cyber-green italic text-sm">${(v.totalVenta || 0).toLocaleString()}</td>
                                                             <td className="p-5 text-right flex justify-end gap-2 items-center">
-                                                                {/* RENDIMIENTO CONDICIONAL: Solo muestra el botón 'Saldar' si tiene deudas de cartera activas */}
+                                                                {/* RENDIMIENTO CONDICIONAL RECTIFICADO: Solo muestra 'Saldar' si v.estado !== 'Pagado' Y tiene deudas activas en pasarela */}
                                                                 {tienePendiente && (
                                                                     <button onClick={() => setSaldarModal({ show: true, venta: v, nuevoMetodo: 'Efectivo', montoEfectivo: v.totalVenta || 0, fechaEfectiva: new Date().toISOString().split('T')[0], observacionCierre: 'Abono Realizado' })} className="px-2 py-1 bg-hades-gold/20 text-hades-gold border border-hades-gold/30 rounded text-[7px] font-black uppercase hover:bg-hades-gold hover:text-black transition-all">Saldar</button>
                                                                 )}
@@ -894,10 +1087,16 @@
                                     <h2 className="text-[10px] font-black mb-6 uppercase text-space-orange italic border-l-4 border-space-purple pl-3">{newProduct.id ? 'MODIFICAR PRODUCTO' : 'INGRESAR A INVENTARIO'}</h2>
                                     <form onSubmit={upsertProd} className="space-y-4">
                                         <div className="grid grid-cols-3 gap-1.5 p-1 bg-black/50 rounded-xl border border-white/5 shadow-inner">
-                                            {['Producto Final', 'Insumo', 'Empaque'].map(cat => (<button key={cat} type="button" onClick={()=>setNewProduct({...newProduct, category: cat, categoria: cat})} className={`py-2 rounded-lg text-[7px] font-black transition-all ${newProduct.categoria === cat ? 'bg-white text-black shadow-lg' : 'text-slate-600 hover:text-white'}`}>{cat.toUpperCase()}</button>))}
+                                            {['Producto Final', 'Insumo', 'Empaque'].map(cat => (<button key={cat} type="button" onClick={() => handleCategoryChange(cat)} className={`py-2 rounded-lg text-[7px] font-black transition-all ${newProduct.categoria === cat ? 'bg-white text-black shadow-lg' : 'text-slate-600 hover:text-white'}`}>{cat.toUpperCase()}</button>))}
                                         </div>
-                                        <div className="relative"><input list="mSkus" value={newProduct.sku} onChange={e=>setNewProduct({...newProduct, sku:e.target.value})} placeholder="SKU (AUTO-CONSECUTIVO)" className="w-full p-3 bg-black/60 rounded-xl text-xs border border-white/10 text-white font-bold uppercase focus:border-white shadow-inner" /><datalist id="mSkus">{inventarioActualizado.map(p => <option key={p.id} value={p.sku}>{p.nombre}</option>)}</datalist></div>
-                                        <input value={newProduct.nombre} onChange={e=>setNewProduct({...newProduct, nombre:e.target.value})} placeholder="PRODUCTO" className="w-full p-3 bg-black/60 rounded-xl text-xs border border-white/10 font-black uppercase focus:border-white text-white shadow-inner" required />
+                                        <div className="relative">
+                                            <input list="mSkus" value={newProduct.sku} onChange={e=>setNewProduct({...newProduct, sku:e.target.value})} placeholder="SKU (AUTO-CONSECUTIVO)" className="w-full p-3 bg-black/60 rounded-xl text-xs border border-white/10 text-white font-bold uppercase focus:border-white shadow-inner" />
+                                            <datalist id="mSkus">{inventarioActualizado.map(p => <option key={p.id} value={p.sku}>{p.nombre}</option>)}</datalist>
+                                        </div>
+                                        
+                                        {/* REQUERIMIENTO: Al ingresar el nombre se autocompleta el SKU consecutivo si está vacío */}
+                                        <input value={newProduct.nombre} onChange={e => handleNewProductNameChange(e.target.value)} placeholder="PRODUCTO" className="w-full p-3 bg-black/60 rounded-xl text-xs border border-white/10 font-black uppercase focus:border-white text-white shadow-inner" required />
+                                        
                                         <div className="space-y-2 bg-white/5 p-4 rounded-2xl border border-white/10 shadow-inner">
                                             <input type="number" value={newProduct.precioCosto} onChange={e=>setNewProduct({...newProduct, precioCosto:e.target.value})} placeholder="PRECIO DE COSTO $" className="w-full bg-black/60 p-2.5 rounded-lg text-xs font-black border border-white/5 text-cyber-green outline-none" required />
                                             {newProduct.categoria !== 'Empaque' && (<input type="number" value={newProduct.precioCliente} onChange={e=>setNewProduct({...newProduct, precioCliente:e.target.value})} placeholder="PRECIO VENTA CLIENTE $" className="w-full bg-black/60 p-2.5 rounded-lg text-xs font-black border border-white/5 text-white outline-none focus:border-white shadow-inner" required />)}
@@ -921,7 +1120,25 @@
                                 {['Producto Final', 'Insumo', 'Empaque'].map(cat => (
                                     <div key={cat} className="glass-panel overflow-hidden border-white/5 mb-6 shadow-xl text-white">
                                         <div className="p-4 bg-white/5 font-black uppercase text-[10px] border-b border-white/5 flex justify-between text-white"><span>Master Feed: {cat}</span><span className="text-space-purple opacity-40 font-mono">{inventarioActualizado.filter(p=>p.categoria===cat).length} Items</span></div>
-                                        <div className="overflow-x-auto"><table className="w-full text-left text-xs text-white"><thead className="bg-black/50 text-space-orange uppercase font-black text-[9px]"><tr><th className="p-4 text-white">SKU</th><th className="p-4 text-white">Nombre</th><th className="p-4 text-center text-white">Stock</th><th className="p-4 text-right text-white">ELIMINAR</th></tr></thead><tbody className="divide-y divide-white/5">{inventarioActualizado.filter(p => p.categoria === cat).map(p => (<tr key={p.id} className="hover:bg-white/5 transition-all text-white"><td className="p-4 font-mono text-space-purple text-[10px] font-bold">{p.sku}</td><td className="p-4 italic text-white text-[10px] truncate max-w-[200px] uppercase">{p.nombre}</td><td className={`p-4 text-center font-black ${p.stockActual<10?'text-red-500 animate-pulse':'text-cyber-green'}`}>{p.stockActual}</td><td className="p-4 text-right flex justify-end gap-2 text-white"><button onClick={()=>setNewProduct({id:p.id, sku:p.sku, nombre:p.nombre, precioCosto:p.precioCosto, precioCliente:p.precioCliente, precioSocio:p.precioSocio, stockInicial:p.stockActual, categoria:p.categoria})} className="text-blue-400 hover:scale-125 transition-all p-1"><i data-lucide="edit-3"></i></button><button onClick={async ()=>{ if(confirm('¿Borrar?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', p.id)); }} className="text-red-500 hover:scale-125 transition-all p-1"><i data-lucide="trash-2"></i></button></td></tr>))}</tbody></table></div>
+                                        <div className="overflow-x-auto flex-1">
+                                            {/* REQUERIMIENTO: Los productos están ordenados ascendentemente en su parte numérica del SKU */}
+                                            <table className="w-full text-left text-xs text-white">
+                                                <thead className="bg-black/50 text-space-orange uppercase font-black text-[9px]"><tr><th className="p-4 text-white">SKU</th><th className="p-4 text-white">Nombre</th><th className="p-4 text-center text-white">Stock</th><th className="p-4 text-right text-white">ELIMINAR</th></tr></thead>
+                                                <tbody className="divide-y divide-white/5">
+                                                    {inventarioActualizado.filter(p => p.categoria === cat).map(p => (
+                                                        <tr key={p.id} className="hover:bg-white/5 transition-all text-white">
+                                                            <td className="p-4 font-mono text-space-purple text-[10px] font-bold">{p.sku}</td>
+                                                            <td className="p-4 italic text-white text-[10px] truncate max-w-[200px] uppercase">{p.nombre}</td>
+                                                            <td className={`p-4 text-center font-black ${p.stockActual<10?'text-red-500 animate-pulse':'text-cyber-green'}`}>{p.stockActual}</td>
+                                                            <td className="p-4 text-right flex justify-end gap-2 text-white">
+                                                                <button onClick={()=>setNewProduct({id:p.id, sku:p.sku, nombre:p.nombre, precioCosto:p.precioCosto, precioCliente:p.precioCliente, precioSocio:p.precioSocio, stockInicial:p.stockActual, categoria:p.categoria})} className="text-blue-400 hover:scale-125 transition-all p-1"><i data-lucide="edit-3"></i></button>
+                                                                <button onClick={async ()=>{ if(confirm('¿Seguro que deseas eliminar este producto permanentemente de la base de datos?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', p.id)); }} className="text-red-500 hover:scale-125 transition-all p-1"><i data-lucide="trash-2"></i></button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -931,9 +1148,9 @@
                             <div className="lg:col-span-4 glass-panel p-8 border-white/10 shadow-2xl">
                                 <h2 className="text-lg font-black mb-8 italic uppercase border-l-4 border-white pl-4 text-white tracking-widest">{newSujeto.id ? 'MODIFICAR SUJETO' : 'Directorio Maestro'}</h2>
                                 <form onSubmit={async (e)=>{ e.preventDefault(); if(newSujeto.id) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', newSujeto.id), { nombre: encryptVal(newSujeto.nombre.toUpperCase(), vaultKey), tipo: newSujeto.tipo, telefono: encryptVal(newSujeto.telefono, vaultKey) }); } else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), { nombre: encryptVal(newSujeto.nombre.toUpperCase(), vaultKey), tipo: newSujeto.tipo, telefono: encryptVal(newSujeto.telefono, vaultKey), timestamp: Date.now() }); } setNewSujeto({id:null, nombre:'', tipo:'Cliente', telefono:''}); mostrarNotificacion("Directorio Sincronizado."); }} className="space-y-6"><div className="grid grid-cols-3 gap-1.5 p-1.5 bg-black/40 rounded-xl border border-white/10 shadow-inner">{['Cliente', 'Proveedor', 'Distribuidor'].map(t => <button key={t} type="button" onClick={()=>setNewSujeto({...newSujeto, tipo:t})} className={`py-3 rounded-lg text-[8px] font-black uppercase transition-all ${newSujeto.tipo===t?'bg-white text-black shadow-xl':'text-slate-600'}`}>{t}</button>)}</div><input value={newSujeto.nombre} onChange={e=>setNewSujeto({...newSujeto, nombre:e.target.value})} placeholder="NOMBRE / ENTIDAD" className="w-full p-4 bg-black/60 rounded-xl text-xs font-black border border-white/5 outline-none uppercase" required /><input value={newSujeto.telefono} onChange={e=>setNewSujeto({...newSujeto, telefono:e.target.value})} placeholder="TELÉFONO / UPLINK" className="w-full p-4 bg-[#1a1a24] rounded-xl text-xs font-black border border-white/5 outline-none shadow-inner" /><button type="submit" className="w-full bg-white text-black font-black py-4 rounded-xl uppercase text-xs tracking-widest italic font-black">REGISTRAR SUJETO</button>{newSujeto.id && (<button type="button" onClick={() => setNewSujeto({ id: null, nombre: '', tipo: 'Cliente', telefono: '' })} className="w-full mt-2 bg-slate-800 text-white font-black py-2.5 rounded-xl uppercase text-[10px] border border-white/10 hover:bg-slate-700 italic">Cancelar</button>)}</form>
-                                <div className="mt-8 pt-8 border-t border-white/5 space-y-4"><h3 className="text-[10px] font-black uppercase text-cyber-green italic text-center tracking-widest">ACTUALIZACION MASIVA</h3><input type="file" ref={fileSujRef} onChange={(e) => uploadExcel(e, 'SUJETOS')} className="hidden" accept=".xlsx, .xls, .csv" /><div className="grid grid-cols-2 gap-2"><button onClick={() => fileSujRef.click()} className="py-3 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">CARGAR ARCHIVO</button><button onClick={() => downloadTemplate('SUJETOS')} className="py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">PLANTILLA</button></div></div>
+                                <div className="mt-8 pt-8 border-t border-white/5 space-y-4"><h3 className="text-[10px] font-black uppercase text-cyber-green italic text-center tracking-widest">ACTUALIZACION MASIVA</h3><input type="file" ref={fileSujRef} onChange={(e) => uploadExcel(e, 'SUJETOS')} className="hidden" accept=".xlsx, .xls, .csv" /><div className="grid grid-cols-2 gap-2"><button onClick={() => fileSujRef.current.click()} className="py-3 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">CARGAR ARCHIVO</button><button onClick={() => downloadTemplate('SUJETOS')} className="py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">PLANTILLA</button></div></div>
                             </div>
-                            <div className="lg:col-span-8 glass-panel overflow-hidden h-[800px] flex flex-col border-white/5 text-white shadow-xl"><div className="p-6 bg-white/5 font-black uppercase text-[10px] border-b border-white/5 flex justify-between items-center"><span>Base de Datos Aliados</span><span className="opacity-40 italic font-mono">{sujetos.length} Registros</span></div><div className="overflow-x-auto flex-1 table-container"><table className="w-full text-left text-xs"><thead className="bg-[#101018] text-slate-500 uppercase font-black sticky top-0"><tr><th className="p-6 py-4 text-white">Tipo</th><th className="p-6 py-4 text-white">Nombre de Entidad</th><th className="p-6 py-4 text-right text-white">ELIMINAR</th></tr></thead><tbody className="divide-y divide-white/5">{decryptedSujetos.map(s => (<tr key={s.id} className="hover:bg-white/10 font-black uppercase italic transition-all group border-l-4 border-l-transparent hover:border-l-space-purple"><td className="p-6"><span className={`px-3 py-1 rounded-md text-[7px] font-black border ${s.tipo==='Cliente'?'text-cyber-green border-cyber-green/30':s.tipo==='Proveedor'?'text-space-orange border-space-orange/30':'text-space-purple border-space-purple/30'}`}>{s.tipo}</span></td><td className="p-6 text-[11px] font-bold uppercase">{s.nombre}</td><td className="p-6 text-right flex justify-end gap-3 opacity-30 group-hover:opacity-100"><button onClick={()=>setNewSujeto({id:s.id, nombre:s.nombre, tipo:s.tipo, telefono:s.telefono})} className="text-blue-400 hover:scale-125 transition-all p-1"><i data-lucide="edit-3"></i></button><button onClick={async ()=>{ if(confirm('¿Anular?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', s.id)); }} className="text-red-500 hover:scale-125 transition-all p-1"><i data-lucide="trash-2"></i></button></td></tr>))}</tbody></table></div></div>
+                            <div className="lg:col-span-8 glass-panel overflow-hidden h-[800px] flex flex-col border-white/5 text-white shadow-xl"><div className="p-6 bg-white/5 font-black uppercase text-[10px] border-b border-white/5 flex justify-between items-center"><span>Base de Datos Aliados</span><span className="opacity-40 italic font-mono">{sujetos.length} Registros</span></div><div className="overflow-x-auto flex-1 table-container"><table className="w-full text-left text-xs"><thead className="bg-[#101018] text-slate-500 uppercase font-black sticky top-0"><tr><th className="p-6 py-4 text-white">Tipo</th><th className="p-6 py-4 text-white font-white">Nombre de Entidad</th><th className="p-6 py-4 text-right text-white">ELIMINAR</th></tr></thead><tbody className="divide-y divide-white/5">{decryptedSujetos.map(s => (<tr key={s.id} className="hover:bg-white/10 font-black uppercase italic transition-all group border-l-4 border-l-transparent hover:border-l-space-purple"><td className="p-6"><span className={`px-3 py-1 rounded-md text-[7px] font-black border ${s.tipo==='Cliente'?'text-cyber-green border-cyber-green/30':s.tipo==='Proveedor'?'text-space-orange border-space-orange/30':'text-space-purple border-space-purple/30'}`}>{s.tipo}</span></td><td className="p-6 text-[11px] font-bold uppercase">{s.nombre}</td><td className="p-6 text-right flex justify-end gap-3 opacity-30 group-hover:opacity-100"><button onClick={()=>setNewSujeto({id:s.id, nombre:s.nombre, tipo:s.tipo, telefono:s.telefono})} className="text-blue-400 hover:scale-125 transition-all p-1"><i data-lucide="edit-3"></i></button><button onClick={async ()=>{ if(confirm('¿Anular?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', s.id)); }} className="text-red-500 hover:scale-125 transition-all p-1"><i data-lucide="trash-2"></i></button></td></tr>))}</tbody></table></div></div>
                         </div>
                     )}
                 </div>
