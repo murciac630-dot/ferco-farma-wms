@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FERCO FARMA | REGISTROS DE BODEGA v19.4</title>
+    <title>FERCO FARMA | REGISTROS DE BODEGA v20.0</title>
     
     <!-- Motores de Estilo y UI -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -94,7 +94,8 @@
 
     <script type="text/babel" data-type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        // REQUERIMIENTO: Importar métodos oficiales para autenticación segura de Firebase
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, query, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
@@ -155,6 +156,10 @@
             const [vaultKey, setVaultKey] = useState('');
             const [isVaultLocked, setIsVaultLocked] = useState(true);
             const [vaultAuthDoc, setVaultAuthDoc] = useState(null);
+            
+            // REQUERIMIENTO: Campos del formulario de Login con Firebase Auth + Clave Maestra
+            const [loginEmail, setLoginEmail] = useState('');
+            const [loginPassword, setLoginPassword] = useState('');
             const [inputKey, setInputKey] = useState('');
             const [vaultError, setVaultError] = useState('');
 
@@ -176,7 +181,7 @@
             const [datosVenta, setDatosVenta] = useState({ 
                 entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, domiciliarioAsignado: 'Cris', 
                 valorDomicilio: 0, canal: 'Ferco Farma', descontarStockHades: true, aplicarDescuento: false, valorDescuento: 0, 
-                responsable: 'Cristian / Admin', cuentaDestino: 'CRIS'
+                cuentaDestino: 'CRIS'
             });
 
             // UI Dropdown States
@@ -194,10 +199,19 @@
 
             const staffDomi = ['Cris', 'Pipe', 'Valentino', 'Jhon', 'Delivery App'];
 
+            // Sincronización del estado de autenticación
             useEffect(() => {
-                signInAnonymously(auth).then(() => {
-                    onAuthStateChanged(auth, (u) => { if(u) { setUser(u); setLoading(false); } });
+                const unsubscribe = onAuthStateChanged(auth, (u) => {
+                    setUser(u);
+                    if (u) {
+                        setLoading(false);
+                    } else {
+                        setIsVaultLocked(true);
+                        setVaultKey('');
+                        setLoading(false);
+                    }
                 });
+                return () => unsubscribe();
             }, []);
 
             useEffect(() => {
@@ -284,7 +298,6 @@
             // --- REFACTORIZACIÓN INVENTARIO ESTÁTICO (O(1) LECTURA) CON ORDEN NUMÉRICO NATURAL ASCENDENTE ---
             const inventarioActualizado = useMemo(() => {
                 return [...decryptedProductos].sort((a, b) => {
-                    // Extraer los dígitos numéricos del SKU (ej: "PFNASA-002" -> 2)
                     const numA = parseInt(a.sku?.match(/\d+/)?.[0] || 0, 10);
                     const numB = parseInt(b.sku?.match(/\d+/)?.[0] || 0, 10);
                     if (numA !== numB) return numA - numB;
@@ -339,7 +352,7 @@
                 return Object.values(stats).sort((a,b) => b.total - a.total).slice(0, 5);
             }, [decryptedVentas]);
 
-            // --- REQUERIMIENTO: AUTO-LLENAR NOMBRE DE PRODUCTO EN DESPACHOS AL COINCIDIR SKU ---
+            // --- AUTO-LLENAR NOMBRE DE PRODUCTO EN DESPACHOS AL COINCIDIR SKU ---
             useEffect(() => {
                 const term = itemActual.sku.trim().toUpperCase();
                 if (term.length > 1) {
@@ -354,7 +367,7 @@
                 }
             }, [itemActual.sku, datosVenta.entidad, datosVenta.canal, inventarioActualizado]);
 
-            // --- REQUERIMIENTO: AUTO-LLENAR CAMPOS EN INVENTARIO CUANDO SE SELECCIONA/ESCRIBE SKU EXISTENTE ---
+            // --- AUTO-LLENAR CAMPOS EN INVENTARIO CUANDO SE SELECCIONA/ESCRIBE SKU EXISTENTE ---
             useEffect(() => {
                 const skuTerm = newProduct.sku.trim().toUpperCase();
                 if (skuTerm.length > 0) {
@@ -374,10 +387,9 @@
                 }
             }, [newProduct.sku, inventarioActualizado]);
 
-            // --- REQUERIMIENTO: AUTO-GENERACIÓN DE SKU AL ESCRIBIR NOMBRE EN INVENTARIO ---
+            // --- AUTO-GENERACIÓN DE SKU AL ESCRIBIR NOMBRE EN INVENTARIO ---
             const handleNewProductNameChange = (nombreVal) => {
                 let skuVal = newProduct.sku;
-                // Genera el consecutivo dinámico solo si no estamos editando y el SKU está vacío
                 if (!newProduct.id && (!newProduct.sku || newProduct.sku.trim() === '')) {
                     skuVal = getNextSKU(newProduct.categoria);
                 }
@@ -401,35 +413,51 @@
                 }));
             };
 
-            // --- PROTOCOLO CLAVE MAESTRA (RE-ESTABLECIDO EXCEPCIONALMENTE) ---
-            const handleUnlockVault = (e) => {
+            // --- REQUERIMIENTO MAESTRO: INICIO DE SESIÓN INTEGRADO CON CONTRASEÑA EN FIREBASE + DESBLOQUEO CRIPTOGRÁFICO ---
+            const handleUnlockVault = async (e) => {
                 e.preventDefault();
-                if (!inputKey) return;
+                if (!loginEmail || !loginPassword || !inputKey) return;
+                try {
+                    // 1. Validar la cuenta del empleado en la nube de Google
+                    const userCredential = await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
+                    const authenticatedUser = userCredential.user;
 
-                if (!vaultAuthDoc) {
-                    // Primer Inicio: Establecer Clave Maestra en la Nube
-                    const verificationToken = encryptVal("FERCO_VAULT_ACTIVE", inputKey);
-                    setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vault_control', 'auth'), {
-                        token: verificationToken
-                    }).then(() => {
+                    if (!vaultAuthDoc) {
+                        // Crear token criptográfico inicial de forma excepcional
+                        const verificationToken = encryptVal("FERCO_VAULT_ACTIVE", inputKey);
+                        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vault_control', 'auth'), {
+                            token: verificationToken
+                        });
                         setVaultKey(inputKey);
                         setIsVaultLocked(false);
-                        mostrarNotificacion("Bóveda Criptográfica Establecida y Desbloqueada.");
-                    }).catch(() => {
-                        setVaultError("Error al inicializar la bóveda en la nube.");
-                    });
-                } else {
-                    // Validación de Clave Existente
-                    const decryptedCheck = decryptVal(vaultAuthDoc.token, inputKey);
-                    if (decryptedCheck === 'FERCO_VAULT_ACTIVE') {
-                        setVaultKey(inputKey);
-                        setIsVaultLocked(false);
-                        setVaultError('');
-                        mostrarNotificacion("Bóveda Criptográfica Abierta.");
+                        mostrarNotificacion("Bóveda e inicio de sesión configurado correctamente.");
                     } else {
-                        setVaultError("⚠️ Clave Incorrecta. Los datos permanecen cifrados.");
+                        // 2. Validar que la Clave Maestra sea capaz de descifrar el token AES-256
+                        const decryptedCheck = decryptVal(vaultAuthDoc.token, inputKey);
+                        if (decryptedCheck === 'FERCO_VAULT_ACTIVE') {
+                            setVaultKey(inputKey);
+                            setIsVaultLocked(false);
+                            setVaultError('');
+                            mostrarNotificacion(`Uplink Seguro: ${authenticatedUser.email}`);
+                        } else {
+                            // Si la Clave Maestra falla, desconectamos Firebase por seguridad inmediata
+                            await signOut(auth);
+                            setVaultError("⚠️ Clave Maestra Incorrecta. Acceso bloqueado.");
+                        }
                     }
+                } catch (err) {
+                    console.error("Error de Login:", err);
+                    setVaultError("⚠️ Credenciales inválidas o falla de conexión con Google Cloud.");
                 }
+            };
+
+            const handleSignOut = async () => {
+                await signOut(auth);
+                setIsVaultLocked(true);
+                setVaultKey('');
+                setLoginEmail('');
+                setLoginPassword('');
+                setInputKey('');
             };
 
             const selectProduct = (p) => {
@@ -456,7 +484,6 @@
                     nombreEntidad: v.nombreEntidad || '',
                     canal: v.canal || 'Ferco Farma',
                     cuentaDestino: v.cuentaDestino || 'CRIS',
-                    responsable: v.responsable || 'Cristian / Admin',
                     entregaDomicilio: v.entregaDomicilio || false,
                     valorDomicilio: v.valorDomicilio || 0,
                     domiciarioAsignado: v.domiciliarioAsignado || 'Cris',
@@ -467,31 +494,20 @@
                 mostrarNotificacion(`Cargando despacho de ${v.nombreEntidad} para modificación.`);
             };
 
-            const cancelarEdicionDespacho = () => {
-                setEditingVentaId(null);
-                setOldItems([]);
-                setCarrito([]); setPagos([]);
-                setDatosVenta({ 
-                    entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, domiciliarioAsignado: 'Cris', 
-                    valorDomicilio: 0, canal: 'Ferco Farma', descontarStockHades: true, aplicarDescuento: false, valorDescuento: 0, 
-                    responsable: 'Cristian / Admin', cuentaDestino: 'CRIS'
-                });
-            };
-
             // --- REGISTRO Y RE-CÁLCULO ATÓMICO NETO DE STOCK ---
             const registrarOActualizarDespacho = async (e) => {
                 e.preventDefault();
                 if (carrito.length === 0 || (totalAbonado < totalOp && datosVenta.entidad !== 'Proveedor')) return;
                 
                 try {
-                    // Evaluación reactiva al instante para inyectar el estado real del despacho
                     const tieneMetodosCredito = pagos.some(p => ['Crédito', 'Cruce', 'Artículo en Garantía'].includes(p.metodo));
                     const estadoInicial = tieneMetodosCredito ? 'Pendiente' : 'Pagado';
 
+                    // REQUERIMIENTO DE AUDITORÍA: El "responsable" se inyecta cifrado con el Email autenticado real
                     const dataPayload = {
                         entidad: datosVenta.entidad, canal: datosVenta.canal, cuentaDestino: datosVenta.cuentaDestino,
                         nombreEntidad: encryptVal(datosVenta.nombreEntidad, vaultKey),
-                        responsable: encryptVal(datosVenta.responsable, vaultKey),
+                        responsable: encryptVal(user ? user.email : 'CRIS_ADMIN', vaultKey),
                         totalVenta: encryptVal(totalOp, vaultKey),
                         items: encryptVal(JSON.stringify(carrito), vaultKey),
                         pagos: encryptVal(JSON.stringify(pagos), vaultKey),
@@ -530,12 +546,11 @@
                             }
                         }
 
-                        // Guardar la venta modificada
                         const ref = doc(db, 'artifacts', appId, 'public', 'data', 'ventas', editingVentaId);
                         await updateDoc(ref, {
                             ...dataPayload,
                             estado: estadoInicial,
-                            auditLog: `MODIFICADO: ${datosVenta.responsable} el ${new Date().toLocaleDateString()}`
+                            auditLog: `MODIFICADO: ${user ? user.email : 'Admin'} el ${new Date().toLocaleDateString()}`
                         });
 
                         setEditingVentaId(null);
@@ -549,7 +564,7 @@
                             estado: estadoInicial, 
                             timestamp: Date.now(),
                             fecha: ahora.toLocaleDateString(), hora: ahora.toLocaleTimeString(),
-                            auditLog: `OP: ${datosVenta.responsable} | CANAL: ${datosVenta.canal}`
+                            auditLog: `OP: ${user ? user.email : 'Admin'} | CANAL: ${datosVenta.canal}`
                         });
 
                         if (datosVenta.descontarStockHades || datosVenta.canal === 'Ferco Farma') {
@@ -572,136 +587,6 @@
                 } catch (err) { mostrarNotificacion("Falla de enlace de datos cloud.", "error"); }
             };
 
-            const ejecutarSaldadoDespacho = async (e) => {
-                e.preventDefault(); const { venta, nuevoMetodo, montoEfectivo, fechaEfectiva, observacionCierre } = saldarModal; if (!venta) return;
-                try {
-                    const pagosActualizados = (venta.pagos || []).map(p => {
-                        if (['Crédito', 'Cruce', 'Artículo en Garantía'].includes(p.metodo)) {
-                            return { ...p, metodo: nuevoMetodo, monto: parseFloat(montoEfectivo) || p.monto, fechaRecaudo: fechaEfectiva, comentario: `${p.comentario || ''} | LIQUIDADO ${fechaEfectiva}: ${observacionCierre}`.trim() };
-                        } return p;
-                    });
-                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', venta.id), {
-                        estado: 'Pagado', pagos: encryptVal(JSON.stringify(pagosActualizados), vaultKey)
-                    });
-                    setSaldarModal({ show: false, venta: null, nuevoMetodo: 'Efectivo', montoEfectivo: '', fechaEfectiva: '', observacionCierre: '' });
-                    mostrarNotificacion("Compromiso saldado.");
-                } catch (err) { mostrarNotificacion("Error.", "error"); }
-            };
-
-            const upsertProd = async (e) => {
-                e.preventDefault(); 
-                const skuF = newProduct.sku.trim() || getNextSKU(newProduct.categoria);
-                const normalizedCat = normalizarCategoria(newProduct.categoria); // Sanitizar categoría al guardar
-
-                const encryptedData = { 
-                    sku: skuF, 
-                    categoria: normalizedCat, 
-                    nombre: encryptVal(newProduct.nombre.toUpperCase(), vaultKey), 
-                    precioCosto: encryptVal(newProduct.precioCosto, vaultKey), 
-                    precioSocio: encryptVal(newProduct.precioSocio, vaultKey),
-                    precioCliente: normalizedCat === 'Empaque' ? encryptVal(0, vaultKey) : encryptVal(newProduct.precioCliente, vaultKey),
-                    stockActual: parseFloat(newProduct.stockInicial) || 0, 
-                    stockInicial: parseFloat(newProduct.stockInicial) || 0, 
-                    timestamp: Date.now()
-                };
-
-                if (newProduct.id) {
-                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', newProduct.id), encryptedData);
-                } else {
-                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), encryptedData);
-                }
-                setNewProduct({ id: null, sku: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
-                mostrarNotificacion("Catálogo de inventarios actualizado.");
-            };
-
-            // --- MOTOR DE CARGA MASIVA SIN CONFLICTOS DE CARRERA (RACE CONDITIONS) ---
-            const uploadExcel = async (e, type) => {
-                const file = e.target.files[0]; if (!file) return; setIsSyncing(true);
-                const reader = new FileReader();
-                reader.onload = async (evt) => {
-                    try {
-                        const bstr = evt.target.result; const wb = XLSX.read(bstr, { type: 'binary' });
-                        const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-                        
-                        if (type === 'INVENTARIO') {
-                            let currentBatch = [...inventarioActualizado];
-                            let creados = 0; let actualizados = 0;
-
-                            for (const row of data) {
-                                let skuE = String(row.SKU || "").trim().toUpperCase(); 
-                                const cat = normalizarCategoria(row.Categoria || 'Producto Final'); // Normalizar la categoría importada
-                                if (!skuE) skuE = getNextSKU(cat, currentBatch);
-                                
-                                const exist = currentBatch.find(p => p.sku.toUpperCase() === skuE); 
-                                const parsedStock = parseFloat(row.Stock) || 0;
-                                const prodData = {
-                                    sku: skuE, categoria: cat, nombre: encryptVal(String(row.Nombre || "PRODUCTO").toUpperCase(), vaultKey),
-                                    precioCosto: encryptVal(parseFloat(row.Costo) || 0, vaultKey), precioCliente: encryptVal(parseFloat(row.Precio_Cliente) || 0, vaultKey), precioSocio: encryptVal(parseFloat(row.Precio_Socio) || 0, vaultKey),
-                                    stockActual: parsedStock, stockInicial: parsedStock, timestamp: Date.now()
-                                };
-                                
-                                if (exist) {
-                                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', exist.id), prodData);
-                                    exist.stockActual = parsedStock;
-                                    exist.stockInicial = parsedStock;
-                                    exist.nombre = String(row.Nombre || "PRODUCTO").toUpperCase();
-                                    exist.precioCosto = parseFloat(row.Costo) || 0;
-                                    exist.precioCliente = parseFloat(row.Precio_Cliente) || 0;
-                                    exist.precioSocio = parseFloat(row.Precio_Socio) || 0;
-                                    actualizados++;
-                                } else {
-                                    const dR = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), prodData);
-                                    currentBatch.push({ id: dR.id, ...prodData }); 
-                                    creados++;
-                                }
-                            }
-                            mostrarNotificacion(`Sincronización Completa: ${creados} SKUs creados, ${actualizados} actualizados.`);
-                        } else if (type === 'SUJETOS') {
-                            let creados = 0;
-                            for (const row of data) { 
-                                if (row.Nombre) {
-                                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), { nombre: encryptVal(row.Nombre.toUpperCase(), vaultKey), tipo: row.Tipo || 'Cliente', telefono: encryptVal(row.Telefono || '', vaultKey), timestamp: Date.now() }); 
-                                    creados++;
-                                }
-                            }
-                            mostrarNotificacion(`Éxito: ${creados} nuevos sujetos registrados.`);
-                        } else if (type === 'DESPACHOS') {
-                            // Saneamiento de carrera de stock en importación de despachos (Running Stock Map)
-                            let runningStock = {};
-                            inventarioActualizado.forEach(prod => {
-                                runningStock[prod.id] = parseFloat(prod.stockActual) || 0;
-                            });
-
-                            let creados = 0;
-                            let omitidos = 0;
-                            for (const row of data) {
-                                const p = inventarioActualizado.find(x => x.sku === row.SKU);
-                                if (p && row.Sujeto) {
-                                    const currentStock = runningStock[p.id];
-                                    const rowQty = parseFloat(row.Cantidad) || 1;
-                                    const nuevoStock = currentStock - rowQty;
-                                    runningStock[p.id] = nuevoStock;
-
-                                    const mI = [{ productoId: p.id, sku: p.sku, nombre: p.nombre, cantidad: rowQty, valorUnitario: row.Valor_Uni || 0, fraccion: 1 }];
-                                    const mP = [{ metodo: row.Metodo || 'Efectivo', monto: row.Total || 0, comentario: row.Obs || '' }];
-                                    const mS = { ferco: (p.precioSocio || 0) * rowQty, hades: ((row.Valor_Uni || 0) - (p.precioSocio || 0)) * rowQty };
-                                    
-                                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), {
-                                        cuentaDestino: row.Cuenta_Ingreso || 'CRIS', entidad: row.Tipo_Sujeto || 'Cliente', canal: row.Canal || 'Ferco Farma', fecha: row.Fecha || new Date().toLocaleDateString(), hora: row.Hora || new Date().toLocaleTimeString(), timestamp: Date.now(), estado: row.Estado || 'Pagado',
-                                        responsable: encryptVal('CARGA_MASIVA', vaultKey), nombreEntidad: encryptVal(row.Sujeto.toUpperCase(), vaultKey), totalVenta: encryptVal(parseFloat(row.Total) || 0, vaultKey), items: encryptVal(JSON.stringify(mI), vaultKey), pagos: encryptVal(JSON.stringify(mP), vaultKey), split: encryptVal(JSON.stringify(mS), vaultKey)
-                                    });
-                                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', p.id), { stockActual: nuevoStock });
-                                    creados++;
-                                } else {
-                                    omitidos++;
-                                }
-                            }
-                            mostrarNotificacion(`Éxito: ${creados} despachos del log histórico integrados.${omitidos > 0 ? ` (Omitidos: ${omitidos} por SKU no registrado)` : ''}`);
-                        }
-                    } catch (err) { mostrarNotificacion("Error en el mapeo de columnas del archivo.", "error"); } finally { setIsSyncing(false); e.target.value = null; }
-                }; reader.readAsBinaryString(file);
-            };
-
             const getNextSKU = (cat, tempProductosList) => {
                 const prefixMap = { 'Producto Final': 'PFNASA-', 'Insumo': 'INASA-', 'Empaque': 'ENASA-' };
                 const prefix = prefixMap[cat] || 'PFNASA-';
@@ -722,13 +607,8 @@
                 if (type === 'INVENTARIO') {
                     if (inventarioActualizado.length > 0) {
                         data = inventarioActualizado.map(p => ({
-                            SKU: p.sku,
-                            Nombre: p.nombre,
-                            Categoria: p.categoria,
-                            Costo: p.precioCosto,
-                            Precio_Cliente: p.precioCliente,
-                            Precio_Socio: p.precioSocio,
-                            Stock: p.stockActual
+                            SKU: p.sku, Nombre: p.nombre, Categoria: p.categoria, Costo: p.precioCosto,
+                            Precio_Cliente: p.precioCliente, Precio_Socio: p.precioSocio, Stock: p.stockActual
                         }));
                     } else {
                         data = [{ SKU: "PFNASA-001", Nombre: "ACETAMINOFEN", Categoria: "Producto Final", Costo: 1000, Precio_Cliente: 1500, Precio_Socio: 1200, Stock: 50 }];
@@ -736,11 +616,7 @@
                 }
                 if (type === 'SUJETOS') {
                     if (decryptedSujetos.length > 0) {
-                        data = decryptedSujetos.map(s => ({
-                            Nombre: s.nombre,
-                            Tipo: s.tipo,
-                            Telefono: s.telefono
-                        }));
+                        data = decryptedSujetos.map(s => ({ Nombre: s.nombre, Tipo: s.tipo, Telefono: s.telefono }));
                     } else {
                         data = [{ Nombre: "JUAN PEREZ", Tipo: "Cliente", Telefono: "300123456" }];
                     }
@@ -751,19 +627,11 @@
                         decryptedVentas.forEach(v => {
                             (v.items || []).forEach(it => {
                                 data.push({
-                                    Fecha: v.fecha,
-                                    Hora: v.hora,
-                                    Sujeto: v.nombreEntidad,
-                                    Tipo_Sujeto: v.entidad,
-                                    Canal: v.canal,
-                                    SKU: it.sku,
-                                    Cantidad: it.cantidad,
-                                    Valor_Uni: it.valorUnitario,
-                                    Total: v.totalVenta,
+                                    Fecha: v.fecha, Hora: v.hora, Sujeto: v.nombreEntidad, Tipo_Sujeto: v.entidad, Canal: v.canal,
+                                    SKU: it.sku, Cantidad: it.cantidad, Valor_Uni: it.valorUnitario, Total: v.totalVenta,
                                     Metodo: v.pagos?.map(p => p.metodo).join(', ') || 'Efectivo',
                                     Obs: v.pagos?.map(p => p.comentario).filter(Boolean).join(' | ') || '',
-                                    Cuenta_Ingreso: v.cuentaDestino || 'CRIS',
-                                    Estado: v.estado || 'Pagado'
+                                    Cuenta_Ingreso: v.cuentaDestino || 'CRIS', Estado: v.estado || 'Pagado'
                                 });
                             });
                         });
@@ -780,14 +648,9 @@
                 const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Log"); XLSX.writeFile(wb, `FERCO_FINANCE_REPORT_${Date.now()}.xlsx`);
             };
 
-            // Sincronización de Iconos Lucide
-            useEffect(() => { 
-                if (!loading && window.lucide) window.lucide.createIcons(); 
-            }, [loading, view, productos, ventas, carrito, datosVenta, sujetos, pagos, metodoActual, newProduct, newSujeto, showProductList, showSubjectList, saldarModal, isVaultLocked, editingVentaId]);
-
             if (loading) return <div className="flex h-screen items-center justify-center bg-[#020206] text-space-purple font-black animate-pulse">Central FERCO FARMA Activo...</div>;
 
-            // --- PORTAL CRYPTO LOCK ---
+            // --- PORTAL CRYPTO LOCK + FORMULARIO DE ACCESO MULTI-USUARIO ---
             if (isVaultLocked) {
                 return (
                     <div className="flex h-screen items-center justify-center bg-[#020206] p-4 text-white font-sans relative">
@@ -797,13 +660,17 @@
                                 <div className="p-4 bg-space-purple/10 rounded-full border border-space-purple/20 animate-pulse"><i data-lucide="shield-alert" className="w-12 h-12 text-space-purple"></i></div>
                             </div>
                             <div>
-                                <h2 className="text-xl font-black uppercase text-white tracking-tighter italic">{!vaultAuthDoc ? "ESTABLECER BÓVEDA" : "BÓVEDA CRIPTOGRÁFICA"}</h2>
-                                <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mt-1">{!vaultAuthDoc ? "Configure su clave de encriptación local AES-256" : "Los datos de la bodega permanecen blindados en la nube"}</p>
+                                <h2 className="text-xl font-black uppercase text-white tracking-tighter italic">{!vaultAuthDoc ? "ESTABLECER ACCESOS" : "PORTAL DE ACCESO SEGURO"}</h2>
+                                <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mt-1">
+                                    {!vaultAuthDoc ? "Defina la clave maestra de encriptación de datos" : "Escriba sus credenciales de Google y la clave maestra"}
+                                </p>
                             </div>
                             <form onSubmit={handleUnlockVault} className="space-y-4">
-                                <input type="password" value={inputKey} onChange={e => setInputKey(e.target.value)} placeholder="CLAVE MAESTRA..." className="w-full p-4 bg-black/60 rounded-xl text-sm font-black border border-white/10 text-center text-[#39ff14] placeholder-slate-700 outline-none" required />
+                                <input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="CORREO CORPORATIVO..." className="w-full p-3 bg-black/60 rounded-xl text-xs font-bold border border-white/10 text-center text-white placeholder-slate-700 outline-none" required />
+                                <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="CONTRASEÑA..." className="w-full p-3 bg-black/60 rounded-xl text-xs font-bold border border-white/10 text-center text-white placeholder-slate-700 outline-none" required />
+                                <input type="password" value={inputKey} onChange={e => setInputKey(e.target.value)} placeholder="CLAVE MAESTRA BODEGA..." className="w-full p-3 bg-black/60 rounded-xl text-xs font-black border border-[#9333ea]/30 text-center text-[#39ff14] placeholder-slate-700 outline-none" required />
                                 {vaultError && <p className="text-[10px] text-red-500 font-black uppercase">{vaultError}</p>}
-                                <button type="submit" className="btn-primary-nasa text-xs tracking-widest uppercase italic font-black">{!vaultAuthDoc ? "Establecer y Desbloquear" : "Desbloquear Bóveda"}</button>
+                                <button type="submit" className="btn-primary-nasa text-xs tracking-widest uppercase italic font-black">Autenticar y Desbloquear</button>
                             </form>
                         </div>
                     </div>
@@ -849,12 +716,19 @@
                     <header className="flex flex-col lg:flex-row justify-between items-center mb-8 gap-6 border-b border-white/5 pb-6">
                         <div className="flex items-center gap-4 text-white">
                             <img src="logo.jpg" alt="L" className="w-12 h-12 rounded-xl border border-white/10 shadow-xl" />
-                            <div><h1 className="text-3xl font-black italic tracking-tighter uppercase">FERCO <span className="text-space-orange">FARMA</span></h1><p className="text-[7px] uppercase tracking-[0.5em] font-black text-space-purple opacity-60">REGISTROS DE BODEGA v19.4</p></div>
+                            <div><h1 className="text-3xl font-black italic tracking-tighter uppercase">FERCO <span className="text-space-orange">FARMA</span></h1><p className="text-[7px] uppercase tracking-[0.5em] font-black text-space-purple opacity-60">REGISTROS DE BODEGA v20.0</p></div>
                         </div>
                         <nav className="flex flex-wrap gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
                             {['dashboard', 'despacho', 'inventario', 'directorio'].map(v => (<button key={v} onClick={() => setView(v)} className={`px-5 py-2 rounded-lg font-black text-[9px] uppercase transition-all ${view===v?'bg-white text-black shadow-xl':'text-slate-500 hover:text-white'}`}>{v.toUpperCase()}</button>))}
                         </nav>
-                        <div className="flex gap-2"><button onClick={() => { setIsVaultLocked(true); setVaultKey(''); }} className="px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 font-black text-[9px] uppercase hover:bg-red-500 hover:text-white transition-all"><i data-lucide="lock" className="w-3.5 h-3.5 inline mr-1"></i> Cerrar Bóveda</button><button onClick={exportarVentas} className="px-5 py-2.5 rounded-lg bg-cyber-green text-black font-black text-[10px] uppercase hover:scale-105 transition-all flex items-center gap-2"><i data-lucide="download-cloud"></i> INFORME</button></div>
+                        <div className="flex gap-2">
+                            <button onClick={handleSignOut} className="px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 font-black text-[9px] uppercase hover:bg-red-500 hover:text-white transition-all">
+                                <i data-lucide="lock" className="w-3.5 h-3.5 inline mr-1"></i> Cerrar Sesión
+                            </button>
+                            <button onClick={exportarVentas} className="px-5 py-2.5 rounded-lg bg-cyber-green text-black font-black text-[10px] uppercase hover:scale-105 transition-all flex items-center gap-2">
+                                <i data-lucide="download-cloud"></i> INFORME
+                            </button>
+                        </div>
                     </header>
 
                     {view === 'dashboard' ? (
@@ -922,7 +796,7 @@
                                         <div className="relative">
                                             <input type="text" value={itemActual.sku} onFocus={() => setShowProductList(true)} onChange={(e)=>setItemActual({...itemActual, sku: e.target.value, productoId:''})} placeholder="SKU / PRODUCTO..." className="w-full p-3 bg-black/60 rounded-xl text-xs border border-[#00f3ff]/20 focus:border-space-purple outline-none font-bold uppercase text-white shadow-inner" />
                                             
-                                            {/* REQUERIMIENTO: Confirmación de Llenado Visual del Nombre de Producto en ingreso */}
+                                            {/* Confirmación de Llenado Visual del Nombre de Producto */}
                                             {itemActual.nombre && (
                                                 <div className="text-[10px] text-cyber-green font-black uppercase mt-1">
                                                     ✓ Seleccionado: {itemActual.nombre}
@@ -998,7 +872,7 @@
                                     <div className="p-4 bg-black/30 rounded-2xl border border-white/5 space-y-3">
                                         <p className="text-[8px] font-black uppercase text-space-purple tracking-widest italic">Cuenta de Ingreso:</p>
                                         <div className="grid grid-cols-2 gap-2">
-                                            {['CRIS', 'JHON'].map(cta => (<button key={cta} type="button" onClick={() => setDatosVenta({...datosVenta, cuentaDestino: cta})} className={`py-2 rounded-lg text-[9px] font-black border transition-all ${datosVenta.cuentaDestino === cta ? 'bg-cyber-green text-black border-cyber-green shadow-md' : 'border-white/5 text-slate-500'}`}>{cta}</button>))}
+                                            {['CRIS', 'JHION'].map(cta => (<button key={cta} type="button" onClick={() => setDatosVenta({...datosVenta, cuentaDestino: cta})} className={`py-2 rounded-lg text-[9px] font-black border transition-all ${datosVenta.cuentaDestino === cta ? 'bg-cyber-green text-black border-cyber-green shadow-md' : 'border-white/5 text-slate-500'}`}>{cta}</button>))}
                                         </div>
                                     </div>
 
@@ -1022,7 +896,11 @@
 
                                     {/* Botón Maestro Unificado de Registro/Actualización */}
                                     <form onSubmit={registrarOActualizarDespacho} className="space-y-4">
-                                        <input type="text" value={datosVenta.responsable} onChange={e=>setDatosVenta({...datosVenta, responsable:e.target.value})} placeholder="NOMBRE DE QUIEN ENTREGA" className="w-full p-4 bg-black/60 rounded-xl text-[10px] border border-white/10 font-bold uppercase text-white shadow-inner" required />
+                                        {/* REQUERIMIENTO DE AUDITORÍA: El nombre del responsable se autocompleta con el email verificado de Firebase */}
+                                        <div className="space-y-1">
+                                            <label className="text-[8px] font-black uppercase text-space-purple tracking-widest block ml-1">Uplink de Operador (Bloqueado):</label>
+                                            <input type="text" value={user ? user.email : 'SIN AUTENTICAR'} readOnly className="w-full p-4 bg-black/60 rounded-xl text-[10px] border border-white/10 font-bold uppercase text-slate-400 cursor-not-allowed shadow-inner outline-none" required />
+                                        </div>
                                         <div className="bg-black/90 p-5 rounded-2xl border-2 border-space-purple/30 flex justify-between items-center shadow-2xl">
                                             <div><p className="text-[7px] font-black uppercase opacity-40 italic">Abonado:</p><p className={`text-xs font-black ${totalAbonado >= totalOp ? 'text-cyber-green' : 'text-red-500'}`}>${totalAbonado.toLocaleString()}</p></div>
                                             <div className="text-right"><p className="text-[8px] font-black uppercase text-space-purple tracking-widest font-mono">TOTAL:</p><p className="text-3xl font-black italic text-white">${totalOp.toLocaleString()}</p></div>
@@ -1052,7 +930,7 @@
                                             <thead className="bg-[#101018] text-slate-500 uppercase font-black sticky top-0"><tr><th className="p-5 py-4">TimeStamp</th><th className="p-5 py-4">Sujeto</th><th className="p-5 py-4 text-center">Total</th><th className="p-5 py-4 text-right">Acción</th></tr></thead>
                                             <tbody className="divide-y divide-white/5">
                                                 {decryptedVentas.map(v => {
-                                                    // REQUERIMIENTO: Evaluación reactiva estricta para mostrar el botón de "Saldar" de forma verdaderamente condicional
+                                                    // Evaluación reactiva estricta para mostrar el botón de "Saldar" de forma verdaderamente condicional
                                                     const tienePendiente = v.estado !== 'Pagado' && (v.pagos && v.pagos.some(p => ['Crédito', 'Cruce', 'Artículo en Garantía'].includes(p.metodo)));
                                                     
                                                     return (
@@ -1061,7 +939,7 @@
                                                             <td className="p-5 font-black uppercase truncate max-w-[140px]">{v.nombreEntidad}</td>
                                                             <td className="p-5 text-center font-black text-cyber-green italic text-sm">${(v.totalVenta || 0).toLocaleString()}</td>
                                                             <td className="p-5 text-right flex justify-end gap-2 items-center">
-                                                                {/* RENDIMIENTO CONDICIONAL RECTIFICADO: Solo muestra 'Saldar' si v.estado !== 'Pagado' Y tiene deudas activas en pasarela */}
+                                                                {/* RENDIMIENTO CONDICIONAL RECTIFICADO: Solo muestra 'Saldar' si v.estado !== 'Pagado' Y tiene deudas de cartera */}
                                                                 {tienePendiente && (
                                                                     <button onClick={() => setSaldarModal({ show: true, venta: v, nuevoMetodo: 'Efectivo', montoEfectivo: v.totalVenta || 0, fechaEfectiva: new Date().toISOString().split('T')[0], observacionCierre: 'Abono Realizado' })} className="px-2 py-1 bg-hades-gold/20 text-hades-gold border border-hades-gold/30 rounded text-[7px] font-black uppercase hover:bg-hades-gold hover:text-black transition-all">Saldar</button>
                                                                 )}
@@ -1094,7 +972,7 @@
                                             <datalist id="mSkus">{inventarioActualizado.map(p => <option key={p.id} value={p.sku}>{p.nombre}</option>)}</datalist>
                                         </div>
                                         
-                                        {/* REQUERIMIENTO: Al ingresar el nombre se autocompleta el SKU consecutivo si está vacío */}
+                                        {/* Al ingresar el nombre se autocompleta el SKU consecutivo si está vacío */}
                                         <input value={newProduct.nombre} onChange={e => handleNewProductNameChange(e.target.value)} placeholder="PRODUCTO" className="w-full p-3 bg-black/60 rounded-xl text-xs border border-white/10 font-black uppercase focus:border-white text-white shadow-inner" required />
                                         
                                         <div className="space-y-2 bg-white/5 p-4 rounded-2xl border border-white/10 shadow-inner">
@@ -1121,7 +999,7 @@
                                     <div key={cat} className="glass-panel overflow-hidden border-white/5 mb-6 shadow-xl text-white">
                                         <div className="p-4 bg-white/5 font-black uppercase text-[10px] border-b border-white/5 flex justify-between text-white"><span>Master Feed: {cat}</span><span className="text-space-purple opacity-40 font-mono">{inventarioActualizado.filter(p=>p.categoria===cat).length} Items</span></div>
                                         <div className="overflow-x-auto flex-1">
-                                            {/* REQUERIMIENTO: Los productos están ordenados ascendentemente en su parte numérica del SKU */}
+                                            {/* Los productos están ordenados ascendentemente en su parte numérica del SKU */}
                                             <table className="w-full text-left text-xs text-white">
                                                 <thead className="bg-black/50 text-space-orange uppercase font-black text-[9px]"><tr><th className="p-4 text-white">SKU</th><th className="p-4 text-white">Nombre</th><th className="p-4 text-center text-white">Stock</th><th className="p-4 text-right text-white">ELIMINAR</th></tr></thead>
                                                 <tbody className="divide-y divide-white/5">
