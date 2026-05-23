@@ -508,8 +508,11 @@
                 if (carrito.length === 0 || (totalAbonado < totalOp && datosVenta.entidad !== 'Proveedor')) return;
                 
                 try {
+                    // REQUERIMIENTO: Evaluación reactiva estricta sobre el flujo de cobros
                     const tieneMetodosCredito = pagos.some(p => ['Crédito', 'Cruce', 'Artículo en Garantía'].includes(p.metodo));
-                    const estadoInicial = tieneMetodosCredito ? 'Pendiente' : 'Pagado';
+                    
+                    // SOLUCIÓN: Si el total abonado cubre o supera el total de la venta, y no hay deudas parciales registradas en Crédito, es "Pagado"
+                    const estadoInicial = (totalAbonado >= totalOp && !tieneMetodosCredito) ? 'Pagado' : 'Pendiente';
 
                     // REQUERIMIENTO DE AUDITORÍA: El "responsable" se inyecta cifrado con el Email autenticado real
                     const dataPayload = {
@@ -1058,7 +1061,7 @@
                                             <thead className="bg-[#101018] text-slate-500 uppercase font-black sticky top-0"><tr><th className="p-5 py-4">TimeStamp</th><th className="p-5 py-4">Sujeto</th><th className="p-5 py-4 text-center">Total</th><th className="p-5 py-4 text-right">Acción</th></tr></thead>
                                             <tbody className="divide-y divide-white/5">
                                                 {decryptedVentas.map(v => {
-                                                    // Evaluación reactiva estricta para mostrar el botón de "Saldar" de forma verdaderamente condicional
+                                                    // REQUERIMIENTO: Evaluación reactiva estricta para mostrar el botón de "Saldar" de forma verdaderamente condicional
                                                     const tienePendiente = v.estado !== 'Pagado' && (v.pagos && v.pagos.some(p => ['Crédito', 'Cruce', 'Artículo en Garantía'].includes(p.metodo)));
                                                     
                                                     return (
