@@ -305,6 +305,19 @@
                 });
             }, [decryptedProductos]);
 
+            // --- DEFINICIÓN DE AUXILIARES TOPOLÓGICAMENTE CORRECTOS ---
+            const getNextSKU = (cat, tempProductosList) => {
+                const prefixMap = { 'Producto Final': 'PFNASA-', 'Insumo': 'INASA-', 'Empaque': 'ENASA-' };
+                const prefix = prefixMap[cat] || 'PFNASA-';
+                const listToScan = tempProductosList || inventarioActualizado;
+                const nums = listToScan.filter(p => p.sku?.startsWith(prefix)).map(p => {
+                    const m = p.sku.match(/\d+/);
+                    return m ? parseInt(m[0], 10) : 0;
+                });
+                const next = Math.max(0, ...nums) + 1;
+                return `${prefix}${String(next).padStart(3, '0')}`;
+            };
+
             // --- CONTROLES GENERALES DE CÁLCULO ---
             const totalOp = useMemo(() => {
                 const sub = carrito.reduce((s, i) => s + (parseFloat(i.cantidad) * i.fraccion * parseFloat(i.valorUnitario) || 0), 0);
@@ -413,17 +426,17 @@
                 }));
             };
 
-            // --- REQUERIMIENTO MAESTRO: INICIO DE SESIÓN INTEGRADO CON CONTRASEÑA EN FIREBASE + DESBLOQUEO CRIPTOGRÁFICO ---
+            // --- REQUERIMIENTO MAESTRO CORREGIDO: MANEJO ROBUSTO DE ERRORES DE LOGIN ---
             const handleUnlockVault = async (e) => {
                 e.preventDefault();
                 if (!loginEmail || !loginPassword || !inputKey) return;
                 try {
-                    // 1. Validar la cuenta del empleado en la nube de Google
+                    // 1. Validar la cuenta del empleado en la nube de Google Firebase Auth
                     const userCredential = await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
                     const authenticatedUser = userCredential.user;
 
                     if (!vaultAuthDoc) {
-                        // Crear token criptográfico inicial de forma excepcional
+                        // Crear token criptográfico inicial si no existe
                         const verificationToken = encryptVal("FERCO_VAULT_ACTIVE", inputKey);
                         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vault_control', 'auth'), {
                             token: verificationToken
@@ -442,12 +455,21 @@
                         } else {
                             // Si la Clave Maestra falla, desconectamos Firebase por seguridad inmediata
                             await signOut(auth);
-                            setVaultError("⚠️ Clave Maestra Incorrecta. Acceso bloqueado.");
+                            setVaultError("⚠️ Clave Maestra de Bodega incorrecta. Acceso denegado.");
                         }
                     }
                 } catch (err) {
                     console.error("Error de Login:", err);
-                    setVaultError("⚠️ Credenciales inválidas o falla de conexión con Google Cloud.");
+                    // Captura inteligente de códigos de error de Google Firebase Auth
+                    if (err.code === 'auth/invalid-credential') {
+                        setVaultError("⚠️ Credenciales inválidas. El correo o la contraseña son incorrectos. Asegúrate de registrar el usuario en tu consola de Firebase Auth con este correo exacto.");
+                    } else if (err.code === 'auth/invalid-email') {
+                        setVaultError("⚠️ Formato de correo electrónico inválido (ejemplo: pipe@fercofarma.com).");
+                    } else if (err.code === 'auth/user-not-found') {
+                        setVaultError("⚠️ Usuario no registrado en la base de datos de autenticación.");
+                    } else {
+                        setVaultError("⚠️ Error de autenticación: " + err.message);
+                    }
                 }
             };
 
@@ -458,20 +480,6 @@
                 setLoginEmail('');
                 setLoginPassword('');
                 setInputKey('');
-            };
-
-            const selectProduct = (p) => {
-                let v = 0;
-                if (datosVenta.entidad === 'Proveedor') v = p.precioCosto || 0;
-                else if (datosVenta.entidad === 'Distribuidor' || datosVenta.canal === 'Hades') v = p.precioSocio || 0;
-                else v = p.precioCliente || 0;
-                setItemActual({ ...itemActual, productoId: p.id, sku: p.sku, nombre: p.nombre, valorUnitario: v });
-                setShowProductList(false);
-            };
-
-            const selectSubject = (s) => {
-                setDatosVenta({...datosVenta, nombreEntidad: s.nombre});
-                setShowSubjectList(false);
             };
 
             // --- CARGAR REGISTRO DE DESPACHO PARA EDICIÓN ---
@@ -587,21 +595,136 @@
                 } catch (err) { mostrarNotificacion("Falla de enlace de datos cloud.", "error"); }
             };
 
-            const getNextSKU = (cat, tempProductosList) => {
-                const prefixMap = { 'Producto Final': 'PFNASA-', 'Insumo': 'INASA-', 'Empaque': 'ENASA-' };
-                const prefix = prefixMap[cat] || 'PFNASA-';
-                const listToScan = tempProductosList || inventarioActualizado;
-                const nums = listToScan.filter(p => p.sku?.startsWith(prefix)).map(p => {
-                    const m = p.sku.match(/\d+/);
-                    return m ? parseInt(m[0], 10) : 0;
-                });
-                const next = Math.max(0, ...nums) + 1;
-                return `${prefix}${String(next).padStart(3, '0')}`;
+            const ejecutarSaldadoDespacho = async (e) => {
+                e.preventDefault(); const { venta, nuevoMetodo, montoEfectivo, fechaEfectiva, observacionCierre } = saldarModal; if (!venta) return;
+                try {
+                    const pagosActualizados = (venta.pagos || []).map(p => {
+                        if (['Crédito', 'Cruce', 'Artículo en Garantía'].includes(p.metodo)) {
+                            return { ...p, metodo: nuevoMetodo, monto: parseFloat(montoEfectivo) || p.monto, fechaRecaudo: fechaEfectiva, comentario: `${p.comentario || ''} | LIQUIDADO ${fechaEfectiva}: ${observacionCierre}`.trim() };
+                        } return p;
+                    });
+                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', venta.id), {
+                        estado: 'Pagado', pagos: encryptVal(JSON.stringify(pagosActualizados), vaultKey)
+                    });
+                    setSaldarModal({ show: false, venta: null, nuevoMetodo: 'Efectivo', montoEfectivo: '', fechaEfectiva: '', observacionCierre: '' });
+                    mostrarNotificacion("Compromiso saldado.");
+                } catch (err) { mostrarNotificacion("Error.", "error"); }
             };
 
-            const uploadTemplate = (type) => downloadTemplate(type);
-            
-            // REQUERIMIENTO: Plantillas inteligentes con datos reales del catálogo para edición fluida
+            const upsertProd = async (e) => {
+                e.preventDefault(); 
+                const skuF = newProduct.sku.trim() || getNextSKU(newProduct.categoria);
+                const normalizedCat = normalizarCategoria(newProduct.categoria); // Sanitizar categoría al guardar
+
+                const encryptedData = { 
+                    sku: skuF, 
+                    categoria: normalizedCat, 
+                    nombre: encryptVal(newProduct.nombre.toUpperCase(), vaultKey), 
+                    precioCosto: encryptVal(newProduct.precioCosto, vaultKey), 
+                    precioSocio: encryptVal(newProduct.precioSocio, vaultKey),
+                    precioCliente: normalizedCat === 'Empaque' ? encryptVal(0, vaultKey) : encryptVal(newProduct.precioCliente, vaultKey),
+                    stockActual: parseFloat(newProduct.stockInicial) || 0, 
+                    stockInicial: parseFloat(newProduct.stockInicial) || 0, 
+                    timestamp: Date.now()
+                };
+
+                if (newProduct.id) {
+                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', newProduct.id), encryptedData);
+                } else {
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), encryptedData);
+                }
+                setNewProduct({ id: null, sku: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
+                mostrarNotificacion("Catálogo de inventarios actualizado.");
+            };
+
+            // --- MOTOR DE CARGA MASIVA SIN CONFLICTOS DE CARRERA (RACE CONDITIONS) ---
+            const uploadExcel = async (e, type) => {
+                const file = e.target.files[0]; if (!file) return; setIsSyncing(true);
+                const reader = new FileReader();
+                reader.onload = async (evt) => {
+                    try {
+                        const bstr = evt.target.result; const wb = XLSX.read(bstr, { type: 'binary' });
+                        const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+                        
+                        if (type === 'INVENTARIO') {
+                            let currentBatch = [...inventarioActualizado];
+                            let creados = 0; let actualizados = 0;
+
+                            for (const row of data) {
+                                let skuE = String(row.SKU || "").trim().toUpperCase(); 
+                                const cat = normalizarCategoria(row.Categoria || 'Producto Final'); // Normalizar la categoría importada
+                                if (!skuE) skuE = getNextSKU(cat, currentBatch);
+                                
+                                const exist = currentBatch.find(p => p.sku.toUpperCase() === skuE); 
+                                const parsedStock = parseFloat(row.Stock) || 0;
+                                const prodData = {
+                                    sku: skuE, categoria: cat, nombre: encryptVal(String(row.Nombre || "PRODUCTO").toUpperCase(), vaultKey),
+                                    precioCosto: encryptVal(parseFloat(row.Costo) || 0, vaultKey), precioCliente: encryptVal(parseFloat(row.Precio_Cliente) || 0, vaultKey), precioSocio: encryptVal(parseFloat(row.Precio_Socio) || 0, vaultKey),
+                                    stockActual: parsedStock, stockInicial: parsedStock, timestamp: Date.now()
+                                };
+                                
+                                if (exist) {
+                                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', exist.id), prodData);
+                                    exist.stockActual = parsedStock;
+                                    exist.stockInicial = parsedStock;
+                                    exist.nombre = String(row.Nombre || "PRODUCTO").toUpperCase();
+                                    exist.precioCosto = parseFloat(row.Costo) || 0;
+                                    exist.precioCliente = parseFloat(row.Precio_Cliente) || 0;
+                                    exist.precioSocio = parseFloat(row.Precio_Socio) || 0;
+                                    actualizados++;
+                                } else {
+                                    const dR = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), prodData);
+                                    currentBatch.push({ id: dR.id, ...prodData }); 
+                                    creados++;
+                                }
+                            }
+                            mostrarNotificacion(`Sincronización Completa: ${creados} SKUs creados, ${actualizados} actualizados.`);
+                        } else if (type === 'SUJETOS') {
+                            let creados = 0;
+                            for (const row of data) { 
+                                if (row.Nombre) {
+                                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), { nombre: encryptVal(row.Nombre.toUpperCase(), vaultKey), tipo: row.Tipo || 'Cliente', telefono: encryptVal(row.Telefono || '', vaultKey), timestamp: Date.now() }); 
+                                    creados++;
+                                }
+                            }
+                            mostrarNotificacion(`Éxito: ${creados} nuevos sujetos registrados.`);
+                        } else if (type === 'DESPACHOS') {
+                            // Saneamiento de carrera de stock en importación de despachos (Running Stock Map)
+                            let runningStock = {};
+                            inventarioActualizado.forEach(prod => {
+                                runningStock[prod.id] = parseFloat(prod.stockActual) || 0;
+                            });
+
+                            let creados = 0;
+                            let omitidos = 0;
+                            for (const row of data) {
+                                const p = inventarioActualizado.find(x => x.sku === row.SKU);
+                                if (p && row.Sujeto) {
+                                    const currentStock = runningStock[p.id];
+                                    const rowQty = parseFloat(row.Cantidad) || 1;
+                                    const nuevoStock = currentStock - rowQty;
+                                    runningStock[p.id] = nuevoStock;
+
+                                    const mI = [{ productoId: p.id, sku: p.sku, nombre: p.nombre, cantidad: rowQty, valorUnitario: row.Valor_Uni || 0, fraccion: 1 }];
+                                    const mP = [{ metodo: row.Metodo || 'Efectivo', monto: row.Total || 0, comentario: row.Obs || '' }];
+                                    const mS = { ferco: (p.precioSocio || 0) * rowQty, hades: ((row.Valor_Uni || 0) - (p.precioSocio || 0)) * rowQty };
+                                    
+                                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), {
+                                        cuentaDestino: row.Cuenta_Ingreso || 'CRIS', entidad: row.Tipo_Sujeto || 'Cliente', canal: row.Canal || 'Ferco Farma', fecha: row.Fecha || new Date().toLocaleDateString(), hora: row.Hora || new Date().toLocaleTimeString(), timestamp: Date.now(), estado: row.Estado || 'Pagado',
+                                        responsable: encryptVal('CARGA_MASIVA', vaultKey), nombreEntidad: encryptVal(row.Sujeto.toUpperCase(), vaultKey), totalVenta: encryptVal(parseFloat(row.Total) || 0, vaultKey), items: encryptVal(JSON.stringify(mI), vaultKey), pagos: encryptVal(JSON.stringify(mP), vaultKey), split: encryptVal(JSON.stringify(mS), vaultKey)
+                                    });
+                                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', p.id), { stockActual: nuevoStock });
+                                    creados++;
+                                } else {
+                                    omitidos++;
+                                }
+                            }
+                            mostrarNotificacion(`Éxito: ${creados} despachos del log histórico integrados.${omitidos > 0 ? ` (Omitidos: ${omitidos} por SKU no registrado)` : ''}`);
+                        }
+                    } catch (err) { mostrarNotificacion("Error en el mapeo de columnas del archivo.", "error"); } finally { setIsSyncing(false); e.target.value = null; }
+                }; reader.readAsBinaryString(file);
+            };
+
             const downloadTemplate = (type) => {
                 let data = [];
                 if (type === 'INVENTARIO') {
@@ -648,6 +771,11 @@
                 const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Log"); XLSX.writeFile(wb, `FERCO_FINANCE_REPORT_${Date.now()}.xlsx`);
             };
 
+            // Sincronización de Iconos Lucide
+            useEffect(() => { 
+                if (!loading && window.lucide) window.lucide.createIcons(); 
+            }, [loading, view, productos, ventas, carrito, datosVenta, sujetos, pagos, metodoActual, newProduct, newSujeto, showProductList, showSubjectList, saldarModal, isVaultLocked, editingVentaId]);
+
             if (loading) return <div className="flex h-screen items-center justify-center bg-[#020206] text-space-purple font-black animate-pulse">Central FERCO FARMA Activo...</div>;
 
             // --- PORTAL CRYPTO LOCK + FORMULARIO DE ACCESO MULTI-USUARIO ---
@@ -669,7 +797,7 @@
                                 <input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="CORREO CORPORATIVO..." className="w-full p-3 bg-black/60 rounded-xl text-xs font-bold border border-white/10 text-center text-white placeholder-slate-700 outline-none" required />
                                 <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="CONTRASEÑA..." className="w-full p-3 bg-black/60 rounded-xl text-xs font-bold border border-white/10 text-center text-white placeholder-slate-700 outline-none" required />
                                 <input type="password" value={inputKey} onChange={e => setInputKey(e.target.value)} placeholder="CLAVE MAESTRA BODEGA..." className="w-full p-3 bg-black/60 rounded-xl text-xs font-black border border-[#9333ea]/30 text-center text-[#39ff14] placeholder-slate-700 outline-none" required />
-                                {vaultError && <p className="text-[10px] text-red-500 font-black uppercase">{vaultError}</p>}
+                                {vaultError && <p className="text-[10px] text-red-500 font-black uppercase leading-relaxed">{vaultError}</p>}
                                 <button type="submit" className="btn-primary-nasa text-xs tracking-widest uppercase italic font-black">Autenticar y Desbloquear</button>
                             </form>
                         </div>
@@ -935,7 +1063,15 @@
                                                     
                                                     return (
                                                         <tr key={v.id} className="hover:bg-white/5 transition-all border-l-4 border-l-transparent hover:border-l-space-purple">
-                                                            <td className="p-5 opacity-40 uppercase font-black text-[8px] leading-tight">{v.hora}<br/>{v.fecha}<br/><span className="text-space-orange font-bold">{v.canal}</span><br/><span className="text-[#39ff14] font-black">CTA: {v.cuentaDestino || 'CRIS'}</span></td>
+                                                            <td className="p-5 opacity-40 uppercase font-black text-[8px] leading-tight">
+                                                                {v.hora}<br/>{v.fecha}<br/>
+                                                                <span className="text-space-orange font-bold">{v.canal}</span><br/>
+                                                                <span className="text-[#39ff14] font-black">CTA: {v.cuentaDestino || 'CRIS'}</span><br/>
+                                                                {/* MEJORA MULTIUSUARIO: Visualización del Operador encriptado/desencriptado en tiempo real en la tabla */}
+                                                                <span className="text-space-purple font-extrabold block mt-1 truncate max-w-[100px]" title={v.responsable}>
+                                                                    OP: {v.responsable ? v.responsable.split('@')[0] : 'Admin'}
+                                                                </span>
+                                                            </td>
                                                             <td className="p-5 font-black uppercase truncate max-w-[140px]">{v.nombreEntidad}</td>
                                                             <td className="p-5 text-center font-black text-cyber-green italic text-sm">${(v.totalVenta || 0).toLocaleString()}</td>
                                                             <td className="p-5 text-right flex justify-end gap-2 items-center">
