@@ -763,6 +763,7 @@
                                         productoId: p ? p.id : 'temp-id',
                                         sku: row.SKU,
                                         nombre: p ? p.nombre : 'Producto',
+                                        whitespace: 1,
                                         cantidad: parseFloat(row.Cantidad) || 1,
                                         valorUnitario: parseFloat(row.Valor_Uni) || 0,
                                         fraccion: 1
@@ -823,6 +824,70 @@
                     } catch (err) { mostrarNotificacion("Error en el mapeo de columnas del archivo.", "error"); } finally { setIsSyncing(false); e.target.value = null; }
                 }; reader.readAsBinaryString(file);
             };
+
+            const downloadTemplate = (type) => {
+                let data = [];
+                if (type === 'INVENTARIO') {
+                    if (inventarioActualizado.length > 0) {
+                        data = inventarioActualizado.map(p => ({
+                            SKU: p.sku, Nombre: p.nombre, Categoria: p.categoria, Costo: p.precioCosto,
+                            Precio_Cliente: p.precioCliente, Precio_Socio: p.precioSocio, Stock: p.stockActual
+                        }));
+                    } else {
+                        data = [{ SKU: "PFNASA-001", Nombre: "ACETAMINOFEN", Categoria: "Producto Final", Costo: 1000, Precio_Cliente: 1500, Precio_Socio: 1200, Stock: 50 }];
+                    }
+                }
+                if (type === 'SUJETOS') {
+                    if (decryptedSujetos.length > 0) {
+                        data = decryptedSujetos.map(s => ({ Nombre: s.nombre, Tipo: s.tipo, Telefono: s.telefono }));
+                    } else {
+                        data = [{ Nombre: "JUAN PEREZ", Tipo: "Cliente", Telefono: "300123456" }];
+                    }
+                }
+                if (type === 'DESPACHOS') {
+                    if (decryptedVentas.length > 0) {
+                        data = [];
+                        decryptedVentas.forEach(v => {
+                            (v.items || []).forEach(it => {
+                                data.push({
+                                    Fecha: v.fecha, Hora: v.hora, Sujeto: v.nombreEntidad, Tipo_Sujeto: v.entidad, Canal: v.canal,
+                                    SKU: it.sku, Cantidad: it.cantidad, Valor_Uni: it.valorUnitario, Total: v.totalVenta,
+                                    Metodo: v.pagos?.map(p => p.metodo).join(', ') || 'Efectivo',
+                                    Obs: v.pagos?.map(p => p.comentario).filter(Boolean).join(' | ') || '',
+                                    Cuenta_Ingreso: v.cuentaDestino || 'CRIS', Estado: v.estado || 'Pagado'
+                                });
+                            });
+                        });
+                    } else {
+                        data = [{ Fecha: "15/05/2026", Hora: "09:00:00", Sujeto: "JUAN PEREZ", Tipo_Sujeto: "Cliente", Canal: "Ferco Farma", SKU: "PFNASA-001", Cantidad: 1, Valor_Uni: 1500, Total: 1500, Metodo: "Efectivo", Obs: "Carga", Cuenta_Ingreso: "CRIS", Estado: "Pendiente" }];
+                    }
+                }
+                const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Plantilla"); XLSX.writeFile(wb, `PLANTILLA_${type}.xlsx`);
+            };
+            const exportarPlantilla = () => downloadTemplate('INVENTARIO');
+
+            // REQUERIMIENTO RECTIFICADO: Restauración de la declaración de exportarVentas
+            const exportarVentas = () => {
+                const ws = XLSX.utils.json_to_sheet(decryptedVentas.map(v => ({ 
+                    ID: v.id, 
+                    FECHA: v.fecha, 
+                    HORA: v.hora, 
+                    CANAL: v.canal, 
+                    TIPO: v.entidad, 
+                    SUJETO: v.nombreEntidad, 
+                    CUENTA_INGRESO: v.cuentaDestino || 'CRIS', 
+                    STATUS: v.estado, 
+                    TOTAL: v.totalVenta 
+                })));
+                const wb = XLSX.utils.book_new(); 
+                XLSX.utils.book_append_sheet(wb, ws, "Log"); 
+                XLSX.writeFile(wb, `FERCO_FINANCE_REPORT_${Date.now()}.xlsx`);
+            };
+
+            // Sincronización de Iconos Lucide
+            useEffect(() => { 
+                if (!loading && window.lucide) window.lucide.createIcons(); 
+            }, [loading, view, productos, ventas, carrito, datosVenta, sujetos, pagos, metodoActual, newProduct, newSujeto, showProductList, showSubjectList, saldarModal, isVaultLocked, editingVentaId]);
 
             if (loading) return <div className="flex h-screen items-center justify-center bg-[#020206] text-space-purple font-black animate-pulse">Central FERCO FARMA Activo...</div>;
 
@@ -1202,7 +1267,7 @@
                             <div className="lg:col-span-4 glass-panel p-8 border-white/10 shadow-2xl">
                                 <h2 className="text-lg font-black mb-8 italic uppercase border-l-4 border-white pl-4 text-white tracking-widest">{newSujeto.id ? 'MODIFICAR SUJETO' : 'Directorio Maestro'}</h2>
                                 <form onSubmit={async (e)=>{ e.preventDefault(); if(newSujeto.id) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', newSujeto.id), { nombre: encryptVal(newSujeto.nombre.toUpperCase(), vaultKey), tipo: newSujeto.tipo, telefono: encryptVal(newSujeto.telefono, vaultKey) }); } else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), { nombre: encryptVal(newSujeto.nombre.toUpperCase(), vaultKey), tipo: newSujeto.tipo, telefono: encryptVal(newSujeto.telefono, vaultKey), timestamp: Date.now() }); } setNewSujeto({id:null, nombre:'', tipo:'Cliente', telefono:''}); mostrarNotificacion("Directorio Sincronizado."); }} className="space-y-6"><div className="grid grid-cols-3 gap-1.5 p-1.5 bg-black/40 rounded-xl border border-white/10 shadow-inner">{['Cliente', 'Proveedor', 'Distribuidor'].map(t => <button key={t} type="button" onClick={()=>setNewSujeto({...newSujeto, tipo:t})} className={`py-3 rounded-lg text-[8px] font-black uppercase transition-all ${newSujeto.tipo===t?'bg-white text-black shadow-xl':'text-slate-600'}`}>{t}</button>)}</div><input value={newSujeto.nombre} onChange={e=>setNewSujeto({...newSujeto, nombre:e.target.value})} placeholder="NOMBRE / ENTIDAD" className="w-full p-4 bg-black/60 rounded-xl text-xs font-black border border-white/5 outline-none uppercase" required /><input value={newSujeto.telefono} onChange={e=>setNewSujeto({...newSujeto, telefono:e.target.value})} placeholder="TELÉFONO / UPLINK" className="w-full p-4 bg-[#1a1a24] rounded-xl text-xs font-black border border-white/5 outline-none shadow-inner" /><button type="submit" className="w-full bg-white text-black font-black py-4 rounded-xl uppercase text-xs tracking-widest italic font-black">REGISTRAR SUJETO</button>{newSujeto.id && (<button type="button" onClick={() => setNewSujeto({ id: null, nombre: '', tipo: 'Cliente', telefono: '' })} className="w-full mt-2 bg-slate-800 text-white font-black py-2.5 rounded-xl uppercase text-[10px] border border-white/10 hover:bg-slate-700 italic">Cancelar</button>)}</form>
-                                <div className="mt-8 pt-8 border-t border-white/5 space-y-4"><h3 className="text-[10px] font-black uppercase text-cyber-green italic text-center tracking-widest">CONCILIAR DIRECTORIO</h3><input type="file" ref={fileSujRef} onChange={(e) => uploadExcel(e, 'SUJETOS')} className="hidden" accept=".xlsx, .xls, .csv" /><div className="grid grid-cols-2 gap-2"><button onClick={() => fileSujRef.current.click()} className="py-3 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">Subir y Sincronizar</button><button onClick={() => downloadTemplate('SUJETOS')} className="py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">Plantilla Smart</button></div></div>
+                                <div className="mt-8 pt-8 border-t border-white/5 space-y-4"><h3 className="text-[10px] font-black uppercase text-cyber-green italic text-center tracking-widest">CONCILIAR DIRECTORIO</h3><input type="file" ref={fileSujRef} onChange={(e) => uploadExcel(e, 'SUJETOS')} className="hidden" accept=".xlsx, .xls, .csv" /><div className="grid grid-cols-2 gap-2"><button onClick={() => fileSujRef.click()} className="py-3 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">Subir y Sincronizar</button><button onClick={() => downloadTemplate('SUJETOS')} className="py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">Plantilla Smart</button></div></div>
                             </div>
                             <div className="lg:col-span-8 glass-panel overflow-hidden h-[800px] flex flex-col border-white/5 text-white shadow-xl"><div className="p-6 bg-white/5 font-black uppercase text-[10px] border-b border-white/5 flex justify-between items-center"><span>Base de Datos Aliados</span><span className="opacity-40 italic font-mono">{sujetos.length} Registros</span></div><div className="overflow-x-auto flex-1 table-container"><table className="w-full text-left text-xs"><thead className="bg-[#101018] text-slate-500 uppercase font-black sticky top-0"><tr><th className="p-6 py-4 text-white">Tipo</th><th className="p-6 py-4 text-white font-white">Nombre de Entidad</th><th className="p-6 py-4 text-right text-white">ELIMINAR</th></tr></thead><tbody className="divide-y divide-white/5">{decryptedSujetos.map(s => (<tr key={s.id} className="hover:bg-white/10 font-black uppercase italic transition-all group border-l-4 border-l-transparent hover:border-l-space-purple"><td className="p-6"><span className={`px-3 py-1 rounded-md text-[7px] font-black border ${s.tipo==='Cliente'?'text-cyber-green border-cyber-green/30':s.tipo==='Proveedor'?'text-space-orange border-space-orange/30':'text-space-purple border-space-purple/30'}`}>{s.tipo}</span></td><td className="p-6 text-[11px] font-bold uppercase">{s.nombre}</td><td className="p-6 text-right flex justify-end gap-3 opacity-30 group-hover:opacity-100"><button onClick={()=>setNewSujeto({id:s.id, nombre:s.nombre, tipo:s.tipo, telefono:s.telefono})} className="text-blue-400 hover:scale-125 transition-all p-1"><i data-lucide="edit-3"></i></button><button onClick={async ()=>{ if(confirm('¿Anular?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', s.id)); }} className="text-red-500 hover:scale-125 transition-all p-1"><i data-lucide="trash-2"></i></button></td></tr>))}</tbody></table></div></div>
                         </div>
