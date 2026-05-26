@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FERCO FARMA | REGISTROS DE BODEGA v20.0</title>
+    <title>FERCO FARMA | REGISTROS DE BODEGA v21.0</title>
     
     <!-- Motores de Estilo y UI -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -94,7 +94,6 @@
 
     <script type="text/babel" data-type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        // REQUERIMIENTO: Importar métodos oficiales para autenticación segura de Firebase
         import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, query, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
@@ -133,14 +132,14 @@
             return isNumeric ? (parseFloat(cipher) || 0) : String(cipher);
         };
 
-        // REQUERIMIENTO: Normalizador de Categorías para evitar "Productos Fantasma" en base de datos
+        // REQUERIMIENTO SANEAMIENTO: Normalizador de Categorías estricto para evitar "Productos Fantasma"
         const normalizarCategoria = (cat) => {
             if (!cat) return 'Producto Final';
             const clean = cat.trim().toLowerCase();
             if (clean.includes('final')) return 'Producto Final';
             if (clean.includes('insumo')) return 'Insumo';
             if (clean.includes('empaque')) return 'Empaque';
-            return 'Producto Final'; // Fallback por defecto seguro
+            return 'Producto Final'; // Previene que categorías corruptas queden huérfanas en Firestore
         };
 
         const App = () => {
@@ -157,7 +156,7 @@
             const [isVaultLocked, setIsVaultLocked] = useState(true);
             const [vaultAuthDoc, setVaultAuthDoc] = useState(null);
             
-            // REQUERIMIENTO: Campos del formulario de Login con Firebase Auth + Clave Maestra
+            // Campos del formulario de Login con Firebase Auth + Clave Maestra
             const [loginEmail, setLoginEmail] = useState('');
             const [loginPassword, setLoginPassword] = useState('');
             const [inputKey, setInputKey] = useState('');
@@ -236,7 +235,7 @@
             const decryptedProductos = useMemo(() => {
                 if (isVaultLocked || !vaultKey) return [];
                 return productos.map(p => {
-                    const catNorm = normalizarCategoria(p.categoria); // Sanitizar categoría en la lectura
+                    const catNorm = normalizarCategoria(p.categoria); // Sanitizar categoría en la lectura para que nunca queden fantasmas
                     return {
                         id: p.id, 
                         sku: p.sku || 'SIN-SKU', 
@@ -426,17 +425,30 @@
                 }));
             };
 
-            // --- REQUERIMIENTO MAESTRO CORREGIDO: MANEJO ROBUSTO DE ERRORES DE LOGIN ---
+            // --- Funciones selectProduct y selectSubject para evitar fallas de referencia ---
+            const selectProduct = (p) => {
+                let v = 0;
+                if (datosVenta.entidad === 'Proveedor') v = p.precioCosto || 0;
+                else if (datosVenta.entidad === 'Distribuidor' || datosVenta.canal === 'Hades') v = p.precioSocio || 0;
+                else v = p.precioCliente || 0;
+                setItemActual(prev => ({ ...prev, productoId: p.id, sku: p.sku, nombre: p.nombre, valorUnitario: v }));
+                setShowProductList(false);
+            };
+
+            const selectSubject = (s) => {
+                setDatosVenta(prev => ({ ...prev, nombreEntidad: s.nombre }));
+                setShowSubjectList(false);
+            };
+
+            // --- INICIO DE SESIÓN INTEGRADO CON CONTRASEÑA EN FIREBASE + DESBLOQUEO CRIPTOGRÁFICO ---
             const handleUnlockVault = async (e) => {
                 e.preventDefault();
                 if (!loginEmail || !loginPassword || !inputKey) return;
                 try {
-                    // 1. Validar la cuenta del empleado en la nube de Google Firebase Auth
                     const userCredential = await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
                     const authenticatedUser = userCredential.user;
 
                     if (!vaultAuthDoc) {
-                        // Crear token criptográfico inicial si no existe
                         const verificationToken = encryptVal("FERCO_VAULT_ACTIVE", inputKey);
                         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vault_control', 'auth'), {
                             token: verificationToken
@@ -445,7 +457,6 @@
                         setIsVaultLocked(false);
                         mostrarNotificacion("Bóveda e inicio de sesión configurado correctamente.");
                     } else {
-                        // 2. Validar que la Clave Maestra sea capaz de descifrar el token AES-256
                         const decryptedCheck = decryptVal(vaultAuthDoc.token, inputKey);
                         if (decryptedCheck === 'FERCO_VAULT_ACTIVE') {
                             setVaultKey(inputKey);
@@ -453,14 +464,12 @@
                             setVaultError('');
                             mostrarNotificacion(`Uplink Seguro: ${authenticatedUser.email}`);
                         } else {
-                            // Si la Clave Maestra falla, desconectamos Firebase por seguridad inmediata
                             await signOut(auth);
                             setVaultError("⚠️ Clave Maestra de Bodega incorrecta. Acceso denegado.");
                         }
                     }
                 } catch (err) {
                     console.error("Error de Login:", err);
-                    // Captura inteligente de códigos de error de Google Firebase Auth
                     if (err.code === 'auth/invalid-credential') {
                         setVaultError("⚠️ Credenciales inválidas. El correo o la contraseña son incorrectos. Asegúrate de registrar el usuario en tu consola de Firebase Auth con este correo exacto.");
                     } else if (err.code === 'auth/invalid-email') {
@@ -508,13 +517,9 @@
                 if (carrito.length === 0 || (totalAbonado < totalOp && datosVenta.entidad !== 'Proveedor')) return;
                 
                 try {
-                    // REQUERIMIENTO: Evaluación reactiva estricta sobre el flujo de cobros
                     const tieneMetodosCredito = pagos.some(p => ['Crédito', 'Cruce', 'Artículo en Garantía'].includes(p.metodo));
-                    
-                    // SOLUCIÓN: Si el total abonado cubre o supera el total de la venta, y no hay deudas parciales registradas en Crédito, es "Pagado"
                     const estadoInicial = (totalAbonado >= totalOp && !tieneMetodosCredito) ? 'Pagado' : 'Pendiente';
 
-                    // REQUERIMIENTO DE AUDITORÍA: El "responsable" se inyecta cifrado con el Email autenticado real
                     const dataPayload = {
                         entidad: datosVenta.entidad, canal: datosVenta.canal, cuentaDestino: datosVenta.cuentaDestino,
                         nombreEntidad: encryptVal(datosVenta.nombreEntidad, vaultKey),
@@ -617,7 +622,7 @@
             const upsertProd = async (e) => {
                 e.preventDefault(); 
                 const skuF = newProduct.sku.trim() || getNextSKU(newProduct.categoria);
-                const normalizedCat = normalizarCategoria(newProduct.categoria); // Sanitizar categoría al guardar
+                const normalizedCat = normalizarCategoria(newProduct.categoria);
 
                 const encryptedData = { 
                     sku: skuF, 
@@ -640,7 +645,7 @@
                 mostrarNotificacion("Catálogo de inventarios actualizado.");
             };
 
-            // --- MOTOR DE CARGA MASIVA SIN CONFLICTOS DE CARRERA (RACE CONDITIONS) ---
+            // --- REQUERIMIENTO MAESTRO: ALGORITMO DE CONCILIACIÓN / SINCRONIZACIÓN ESPEJO EN BUCLE ---
             const uploadExcel = async (e, type) => {
                 const file = e.target.files[0]; if (!file) return; setIsSyncing(true);
                 const reader = new FileReader();
@@ -650,134 +655,174 @@
                         const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
                         
                         if (type === 'INVENTARIO') {
-                            let currentBatch = [...inventarioActualizado];
+                            // 1. Identificar registros a ELIMINAR de Firestore (aquellos en BD que no están en el Excel)
+                            const excelIds = new Set(data.map(row => row.ID).filter(Boolean));
+                            const excelSkus = new Set(data.map(row => String(row.SKU || '').trim().toUpperCase()).filter(Boolean));
+                            
+                            let eliminados = 0;
+                            const itemsAEliminar = inventarioActualizado.filter(p => !excelIds.has(p.id) && !excelSkus.has(p.sku.toUpperCase()));
+                            
+                            for (const item of itemsAEliminar) {
+                                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', item.id));
+                                eliminados++;
+                            }
+
+                            // 2. CREAR o MODIFICAR registros en Firestore
                             let creados = 0; let actualizados = 0;
+                            let currentBatch = [...inventarioActualizado];
 
                             for (const row of data) {
                                 let skuE = String(row.SKU || "").trim().toUpperCase(); 
-                                const cat = normalizarCategoria(row.Categoria || 'Producto Final'); // Normalizar la categoría importada
+                                const cat = normalizarCategoria(row.Categoria || 'Producto Final');
                                 if (!skuE) skuE = getNextSKU(cat, currentBatch);
                                 
-                                const exist = currentBatch.find(p => p.sku.toUpperCase() === skuE); 
+                                // Buscar correspondencia por ID o SKU
+                                const exist = currentBatch.find(p => (row.ID && p.id === row.ID) || p.sku.toUpperCase() === skuE); 
                                 const parsedStock = parseFloat(row.Stock) || 0;
                                 const prodData = {
-                                    sku: skuE, categoria: cat, nombre: encryptVal(String(row.Nombre || "PRODUCTO").toUpperCase(), vaultKey),
-                                    precioCosto: encryptVal(parseFloat(row.Costo) || 0, vaultKey), precioCliente: encryptVal(parseFloat(row.Precio_Cliente) || 0, vaultKey), precioSocio: encryptVal(parseFloat(row.Precio_Socio) || 0, vaultKey),
-                                    stockActual: parsedStock, stockInicial: parsedStock, timestamp: Date.now()
+                                    sku: skuE, 
+                                    categoria: cat, 
+                                    nombre: encryptVal(String(row.Nombre || "PRODUCTO").toUpperCase(), vaultKey),
+                                    precioCosto: encryptVal(parseFloat(row.Costo) || 0, vaultKey), 
+                                    precioCliente: encryptVal(parseFloat(row.Precio_Cliente) || 0, vaultKey), 
+                                    precioSocio: encryptVal(parseFloat(row.Precio_Socio) || 0, vaultKey),
+                                    stockActual: parsedStock, 
+                                    stockInicial: parsedStock, 
+                                    timestamp: Date.now()
                                 };
                                 
                                 if (exist) {
                                     await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', exist.id), prodData);
-                                    exist.stockActual = parsedStock;
-                                    exist.stockInicial = parsedStock;
-                                    exist.nombre = String(row.Nombre || "PRODUCTO").toUpperCase();
-                                    exist.precioCosto = parseFloat(row.Costo) || 0;
-                                    exist.precioCliente = parseFloat(row.Precio_Cliente) || 0;
-                                    exist.precioSocio = parseFloat(row.Precio_Socio) || 0;
                                     actualizados++;
                                 } else {
-                                    const dR = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), prodData);
-                                    currentBatch.push({ id: dR.id, ...prodData }); 
+                                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), prodData);
                                     creados++;
                                 }
                             }
-                            mostrarNotificacion(`Sincronización Completa: ${creados} SKUs creados, ${actualizados} actualizados.`);
+                            mostrarNotificacion(`Conciliación de Inventario: ${creados} Creados, ${actualizados} Actualizados, ${eliminados} Eliminados de la base de datos.`);
                         } else if (type === 'SUJETOS') {
-                            let creados = 0;
+                            // 1. Identificar sujetos a ELIMINAR
+                            const excelIds = new Set(data.map(row => row.ID).filter(Boolean));
+                            const excelNames = new Set(data.map(row => String(row.Nombre || '').trim().toUpperCase()).filter(Boolean));
+                            
+                            let eliminados = 0;
+                            const sujetosAEliminar = decryptedSujetos.filter(s => !excelIds.has(s.id) && !excelNames.has(s.nombre.toUpperCase()));
+                            
+                            for (const s of sujetosAEliminar) {
+                                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', s.id));
+                                eliminados++;
+                            }
+
+                            // 2. CREAR o MODIFICAR sujetos
+                            let creados = 0; let actualizados = 0;
                             for (const row of data) { 
                                 if (row.Nombre) {
-                                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), { nombre: encryptVal(row.Nombre.toUpperCase(), vaultKey), tipo: row.Tipo || 'Cliente', telefono: encryptVal(row.Telefono || '', vaultKey), timestamp: Date.now() }); 
-                                    creados++;
+                                    const nameE = String(row.Nombre).trim().toUpperCase();
+                                    const exist = decryptedSujetos.find(s => (row.ID && s.id === row.ID) || s.nombre.toUpperCase() === nameE);
+                                    const sujetoData = {
+                                        nombre: encryptVal(nameE, vaultKey), 
+                                        tipo: row.Tipo || 'Cliente', 
+                                        telefono: encryptVal(row.Telefono || '', vaultKey), 
+                                        timestamp: Date.now()
+                                    };
+
+                                    if (exist) {
+                                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', exist.id), sujetoData);
+                                        actualizados++;
+                                    } else {
+                                        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), sujetoData);
+                                        creados++;
+                                    }
                                 }
                             }
-                            mostrarNotificacion(`Éxito: ${creados} nuevos sujetos registrados.`);
+                            mostrarNotificacion(`Conciliación de Sujetos: ${creados} Creados, ${actualizados} Actualizados, ${eliminados} Eliminados.`);
                         } else if (type === 'DESPACHOS') {
-                            // Saneamiento de carrera de stock en importación de despachos (Running Stock Map)
-                            let runningStock = {};
-                            inventarioActualizado.forEach(prod => {
-                                runningStock[prod.id] = parseFloat(prod.stockActual) || 0;
+                            // 1. Agrupar transacciones de Excel por ID de Venta para procesar compras multi-línea
+                            const excelVentas = {};
+                            data.forEach(row => {
+                                const idV = row.ID_Venta || '';
+                                if (idV) {
+                                    if (!excelVentas[idV]) {
+                                        excelVentas[idV] = {
+                                            id: idV,
+                                            fecha: row.Fecha,
+                                            hora: row.Hora,
+                                            cliente: row.Sujeto,
+                                            tipoCliente: row.Tipo_Sujeto || 'Cliente',
+                                            canal: row.Canal || 'Ferco Farma',
+                                            cuentaIngreso: row.Cuenta_Ingreso || 'CRIS',
+                                            estado: row.Estado || 'Pagado',
+                                            total: parseFloat(row.Total) || 0,
+                                            metodo: row.Metodo || 'Efectivo',
+                                            obs: row.Obs || '',
+                                            items: []
+                                        };
+                                    }
+                                    const p = inventarioActualizado.find(x => x.sku === row.SKU);
+                                    excelVentas[idV].items.push({
+                                        productoId: p ? p.id : 'temp-id',
+                                        sku: row.SKU,
+                                        nombre: p ? p.nombre : 'Producto',
+                                        cantidad: parseFloat(row.Cantidad) || 1,
+                                        valorUnitario: parseFloat(row.Valor_Uni) || 0,
+                                        fraccion: 1
+                                    });
+                                }
                             });
 
-                            let creados = 0;
-                            let omitidos = 0;
-                            for (const row of data) {
-                                const p = inventarioActualizado.find(x => x.sku === row.SKU);
-                                if (p && row.Sujeto) {
-                                    const currentStock = runningStock[p.id];
-                                    const rowQty = parseFloat(row.Cantidad) || 1;
-                                    const nuevoStock = currentStock - rowQty;
-                                    runningStock[p.id] = nuevoStock;
-
-                                    const mI = [{ productoId: p.id, sku: p.sku, nombre: p.nombre, cantidad: rowQty, valorUnitario: row.Valor_Uni || 0, fraccion: 1 }];
-                                    const mP = [{ metodo: row.Metodo || 'Efectivo', monto: row.Total || 0, comentario: row.Obs || '' }];
-                                    const mS = { ferco: (p.precioSocio || 0) * rowQty, hades: ((row.Valor_Uni || 0) - (p.precioSocio || 0)) * rowQty };
-                                    
-                                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), {
-                                        cuentaDestino: row.Cuenta_Ingreso || 'CRIS', entidad: row.Tipo_Sujeto || 'Cliente', canal: row.Canal || 'Ferco Farma', fecha: row.Fecha || new Date().toLocaleDateString(), hora: row.Hora || new Date().toLocaleTimeString(), timestamp: Date.now(), estado: row.Estado || 'Pagado',
-                                        responsable: encryptVal('CARGA_MASIVA', vaultKey), nombreEntidad: encryptVal(row.Sujeto.toUpperCase(), vaultKey), totalVenta: encryptVal(parseFloat(row.Total) || 0, vaultKey), items: encryptVal(JSON.stringify(mI), vaultKey), pagos: encryptVal(JSON.stringify(mP), vaultKey), split: encryptVal(JSON.stringify(mS), vaultKey)
-                                    });
-                                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', p.id), { stockActual: nuevoStock });
-                                    creados++;
-                                } else {
-                                    omitidos++;
+                            // 2. Eliminar ventas omitidas de la base de datos
+                            const excelVentaIds = new Set(Object.keys(excelVentas));
+                            let eliminados = 0;
+                            if (excelVentaIds.size > 0) { // Salvaguarda para no borrar todo si el archivo viene vacío
+                                const ventasAEliminar = decryptedVentas.filter(v => !excelVentaIds.has(v.id));
+                                for (const v of ventasAEliminar) {
+                                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', v.id));
+                                    eliminados++;
                                 }
                             }
-                            mostrarNotificacion(`Éxito: ${creados} despachos del log histórico integrados.${omitidos > 0 ? ` (Omitidos: ${omitidos} por SKU no registrado)` : ''}`);
+
+                            // 3. Crear o Modificar ventas
+                            let creados = 0; let actualizados = 0;
+                            for (const key of Object.keys(excelVentas)) {
+                                const row = excelVentas[key];
+                                const exist = decryptedVentas.find(v => v.id === row.id);
+                                
+                                const mP = [{ metodo: row.metodo, monto: row.total, comentario: row.obs }];
+                                const splitBase = { ferco: row.total, hades: 0 };
+
+                                const ventaPayload = {
+                                    entidad: row.tipoCliente,
+                                    canal: row.canal,
+                                    cuentaDestino: row.cuentaIngreso,
+                                    nombreEntidad: encryptVal(row.cliente.toUpperCase(), vaultKey),
+                                    responsable: encryptVal(user ? user.email : 'CARGA_MASIVA', vaultKey),
+                                    totalVenta: encryptVal(row.total, vaultKey),
+                                    items: encryptVal(JSON.stringify(row.items), vaultKey),
+                                    pagos: encryptVal(JSON.stringify(mP), vaultKey),
+                                    split: encryptVal(JSON.stringify(splitBase), vaultKey),
+                                    estado: row.estado
+                                };
+
+                                if (exist) {
+                                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', exist.id), ventaPayload);
+                                    actualizados++;
+                                } else {
+                                    const ahora = new Date();
+                                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), {
+                                        ...ventaPayload,
+                                        timestamp: Date.now(),
+                                        fecha: row.fecha || ahora.toLocaleDateString(),
+                                        hora: row.hora || ahora.toLocaleTimeString(),
+                                        auditLog: 'SINCRONIZACIÓN EXCEL'
+                                    });
+                                    creados++;
+                                }
+                            }
+                            mostrarNotificacion(`Conciliación de Despachos: ${creados} Creados, ${actualizados} Actualizados, ${eliminados} Eliminados.`);
                         }
                     } catch (err) { mostrarNotificacion("Error en el mapeo de columnas del archivo.", "error"); } finally { setIsSyncing(false); e.target.value = null; }
                 }; reader.readAsBinaryString(file);
             };
-
-            const downloadTemplate = (type) => {
-                let data = [];
-                if (type === 'INVENTARIO') {
-                    if (inventarioActualizado.length > 0) {
-                        data = inventarioActualizado.map(p => ({
-                            SKU: p.sku, Nombre: p.nombre, Categoria: p.categoria, Costo: p.precioCosto,
-                            Precio_Cliente: p.precioCliente, Precio_Socio: p.precioSocio, Stock: p.stockActual
-                        }));
-                    } else {
-                        data = [{ SKU: "PFNASA-001", Nombre: "ACETAMINOFEN", Categoria: "Producto Final", Costo: 1000, Precio_Cliente: 1500, Precio_Socio: 1200, Stock: 50 }];
-                    }
-                }
-                if (type === 'SUJETOS') {
-                    if (decryptedSujetos.length > 0) {
-                        data = decryptedSujetos.map(s => ({ Nombre: s.nombre, Tipo: s.tipo, Telefono: s.telefono }));
-                    } else {
-                        data = [{ Nombre: "JUAN PEREZ", Tipo: "Cliente", Telefono: "300123456" }];
-                    }
-                }
-                if (type === 'DESPACHOS') {
-                    if (decryptedVentas.length > 0) {
-                        data = [];
-                        decryptedVentas.forEach(v => {
-                            (v.items || []).forEach(it => {
-                                data.push({
-                                    Fecha: v.fecha, Hora: v.hora, Sujeto: v.nombreEntidad, Tipo_Sujeto: v.entidad, Canal: v.canal,
-                                    SKU: it.sku, Cantidad: it.cantidad, Valor_Uni: it.valorUnitario, Total: v.totalVenta,
-                                    Metodo: v.pagos?.map(p => p.metodo).join(', ') || 'Efectivo',
-                                    Obs: v.pagos?.map(p => p.comentario).filter(Boolean).join(' | ') || '',
-                                    Cuenta_Ingreso: v.cuentaDestino || 'CRIS', Estado: v.estado || 'Pagado'
-                                });
-                            });
-                        });
-                    } else {
-                        data = [{ Fecha: "15/05/2026", Hora: "09:00:00", Sujeto: "JUAN PEREZ", Tipo_Sujeto: "Cliente", Canal: "Ferco Farma", SKU: "PFNASA-001", Cantidad: 1, Valor_Uni: 1500, Total: 1500, Metodo: "Efectivo", Obs: "Carga", Cuenta_Ingreso: "CRIS", Estado: "Pendiente" }];
-                    }
-                }
-                const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Plantilla"); XLSX.writeFile(wb, `PLANTILLA_${type}.xlsx`);
-            };
-            const exportarPlantilla = () => downloadTemplate('INVENTARIO');
-
-            const exportarVentas = () => {
-                const ws = XLSX.utils.json_to_sheet(decryptedVentas.map(v => ({ ID: v.id, FECHA: v.fecha, HORA: v.hora, CANAL: v.canal, TIPO: v.entidad, SUJETO: v.nombreEntidad, CUENTA_INGRESO: v.cuentaDestino || 'CRIS', STATUS: v.estado, TOTAL: v.totalVenta })));
-                const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Log"); XLSX.writeFile(wb, `FERCO_FINANCE_REPORT_${Date.now()}.xlsx`);
-            };
-
-            // Sincronización de Iconos Lucide
-            useEffect(() => { 
-                if (!loading && window.lucide) window.lucide.createIcons(); 
-            }, [loading, view, productos, ventas, carrito, datosVenta, sujetos, pagos, metodoActual, newProduct, newSujeto, showProductList, showSubjectList, saldarModal, isVaultLocked, editingVentaId]);
 
             if (loading) return <div className="flex h-screen items-center justify-center bg-[#020206] text-space-purple font-black animate-pulse">Central FERCO FARMA Activo...</div>;
 
@@ -847,7 +892,7 @@
                     <header className="flex flex-col lg:flex-row justify-between items-center mb-8 gap-6 border-b border-white/5 pb-6">
                         <div className="flex items-center gap-4 text-white">
                             <img src="logo.jpg" alt="L" className="w-12 h-12 rounded-xl border border-white/10 shadow-xl" />
-                            <div><h1 className="text-3xl font-black italic tracking-tighter uppercase">FERCO <span className="text-space-orange">FARMA</span></h1><p className="text-[7px] uppercase tracking-[0.5em] font-black text-space-purple opacity-60">REGISTROS DE BODEGA v20.0</p></div>
+                            <div><h1 className="text-3xl font-black italic tracking-tighter uppercase">FERCO <span className="text-space-orange">FARMA</span></h1><p className="text-[7px] uppercase tracking-[0.5em] font-black text-space-purple opacity-60">REGISTROS DE BODEGA v21.0</p></div>
                         </div>
                         <nav className="flex flex-wrap gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
                             {['dashboard', 'despacho', 'inventario', 'directorio'].map(v => (<button key={v} onClick={() => setView(v)} className={`px-5 py-2 rounded-lg font-black text-[9px] uppercase transition-all ${view===v?'bg-white text-black shadow-xl':'text-slate-500 hover:text-white'}`}>{v.toUpperCase()}</button>))}
@@ -1027,7 +1072,6 @@
 
                                     {/* Botón Maestro Unificado de Registro/Actualización */}
                                     <form onSubmit={registrarOActualizarDespacho} className="space-y-4">
-                                        {/* REQUERIMIENTO DE AUDITORÍA: El nombre del responsable se autocompleta con el email verificado de Firebase */}
                                         <div className="space-y-1">
                                             <label className="text-[8px] font-black uppercase text-space-purple tracking-widest block ml-1">Uplink de Operador (Bloqueado):</label>
                                             <input type="text" value={user ? user.email : 'SIN AUTENTICAR'} readOnly className="w-full p-4 bg-black/60 rounded-xl text-[10px] border border-white/10 font-bold uppercase text-slate-400 cursor-not-allowed shadow-inner outline-none" required />
@@ -1045,8 +1089,8 @@
                                         <p className="text-[8px] font-black uppercase text-cyber-green italic text-center">Registro Masivo de Despachos</p>
                                         <div className="grid grid-cols-2 gap-2">
                                             <input type="file" ref={fileDespRef} onChange={(e) => uploadExcel(e, 'DESPACHOS')} className="hidden" accept=".xlsx, .xls, .csv" />
-                                            <button onClick={() => fileDespRef.current.click()} disabled={isSyncing} className="py-2.5 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">CARGAR ARCHIVO</button>
-                                            <button onClick={() => downloadTemplate('DESPACHOS')} className="py-2.5 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">PLANTILLA</button>
+                                            <button onClick={() => fileDespRef.current.click()} disabled={isSyncing} className="py-2.5 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">Sincronizar Log</button>
+                                            <button onClick={() => downloadTemplate('DESPACHOS')} className="py-2.5 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">Plantilla Smart</button>
                                         </div>
                                     </div>
                                 </div>
@@ -1061,7 +1105,6 @@
                                             <thead className="bg-[#101018] text-slate-500 uppercase font-black sticky top-0"><tr><th className="p-5 py-4">TimeStamp</th><th className="p-5 py-4">Sujeto</th><th className="p-5 py-4 text-center">Total</th><th className="p-5 py-4 text-right">Acción</th></tr></thead>
                                             <tbody className="divide-y divide-white/5">
                                                 {decryptedVentas.map(v => {
-                                                    // REQUERIMIENTO: Evaluación reactiva estricta para mostrar el botón de "Saldar" de forma verdaderamente condicional
                                                     const tienePendiente = v.estado !== 'Pagado' && (v.pagos && v.pagos.some(p => ['Crédito', 'Cruce', 'Artículo en Garantía'].includes(p.metodo)));
                                                     
                                                     return (
@@ -1070,7 +1113,6 @@
                                                                 {v.hora}<br/>{v.fecha}<br/>
                                                                 <span className="text-space-orange font-bold">{v.canal}</span><br/>
                                                                 <span className="text-[#39ff14] font-black">CTA: {v.cuentaDestino || 'CRIS'}</span><br/>
-                                                                {/* MEJORA MULTIUSUARIO: Visualización del Operador encriptado/desencriptado en tiempo real en la tabla */}
                                                                 <span className="text-space-purple font-extrabold block mt-1 truncate max-w-[100px]" title={v.responsable}>
                                                                     OP: {v.responsable ? v.responsable.split('@')[0] : 'Admin'}
                                                                 </span>
@@ -1078,14 +1120,11 @@
                                                             <td className="p-5 font-black uppercase truncate max-w-[140px]">{v.nombreEntidad}</td>
                                                             <td className="p-5 text-center font-black text-cyber-green italic text-sm">${(v.totalVenta || 0).toLocaleString()}</td>
                                                             <td className="p-5 text-right flex justify-end gap-2 items-center">
-                                                                {/* RENDIMIENTO CONDICIONAL RECTIFICADO: Solo muestra 'Saldar' si v.estado !== 'Pagado' Y tiene deudas de cartera */}
                                                                 {tienePendiente && (
                                                                     <button onClick={() => setSaldarModal({ show: true, venta: v, nuevoMetodo: 'Efectivo', montoEfectivo: v.totalVenta || 0, fechaEfectiva: new Date().toISOString().split('T')[0], observacionCierre: 'Abono Realizado' })} className="px-2 py-1 bg-hades-gold/20 text-hades-gold border border-hades-gold/30 rounded text-[7px] font-black uppercase hover:bg-hades-gold hover:text-black transition-all">Saldar</button>
                                                                 )}
                                                                 
-                                                                {/* Botón de Edición Estructural de Despachos */}
                                                                 <button onClick={() => iniciarEdicionDespacho(v)} className="text-blue-400 hover:text-blue-300 hover:scale-125 transition-all p-1" title="Modificar Despacho"><i data-lucide="edit-3" className="w-3.5 h-3.5"></i></button>
-                                                                
                                                                 <button onClick={async ()=>{ if(confirm('¿Anular?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', v.id)); }} className="text-red-500 hover:scale-125 transition-transform p-1"><i data-lucide="trash-2" className="w-3.5 h-3.5"></i></button>
                                                             </td>
                                                         </tr>
@@ -1111,7 +1150,6 @@
                                             <datalist id="mSkus">{inventarioActualizado.map(p => <option key={p.id} value={p.sku}>{p.nombre}</option>)}</datalist>
                                         </div>
                                         
-                                        {/* Al ingresar el nombre se autocompleta el SKU consecutivo si está vacío */}
                                         <input value={newProduct.nombre} onChange={e => handleNewProductNameChange(e.target.value)} placeholder="PRODUCTO" className="w-full p-3 bg-black/60 rounded-xl text-xs border border-white/10 font-black uppercase focus:border-white text-white shadow-inner" required />
                                         
                                         <div className="space-y-2 bg-white/5 p-4 rounded-2xl border border-white/10 shadow-inner">
@@ -1125,11 +1163,11 @@
                                     </form>
                                 </div>
                                 <div className="glass-panel p-6 border-cyber-green/30 text-center space-y-4">
-                                    <h3 className="text-[10px] font-black uppercase text-cyber-green italic tracking-widest flex items-center justify-center gap-2"><i data-lucide="upload-cloud"></i> ACTUALIZACION MASIVA</h3>
+                                    <h3 className="text-[10px] font-black uppercase text-cyber-green italic tracking-widest flex items-center justify-center gap-2"><i data-lucide="upload-cloud"></i> CONCILIAR INVENTARIO</h3>
                                     <input type="file" ref={fileInvRef} onChange={(e) => uploadExcel(e, 'INVENTARIO')} className="hidden" accept=".xlsx, .xls, .csv" />
                                     <div className="grid grid-cols-2 gap-2 text-white">
-                                        <button onClick={() => fileInvRef.current.click()} disabled={isSyncing} className="py-3 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">CARGAR ARCHIVO</button>
-                                        <button onClick={exportarPlantilla} className="py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">DESCARGAR PLANTILLA</button>
+                                        <button onClick={() => fileInvRef.current.click()} disabled={isSyncing} className="py-3 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">Subir y Sincronizar</button>
+                                        <button onClick={exportarPlantilla} className="py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">Plantilla Smart</button>
                                     </div>
                                 </div>
                             </div>
@@ -1138,7 +1176,6 @@
                                     <div key={cat} className="glass-panel overflow-hidden border-white/5 mb-6 shadow-xl text-white">
                                         <div className="p-4 bg-white/5 font-black uppercase text-[10px] border-b border-white/5 flex justify-between text-white"><span>Master Feed: {cat}</span><span className="text-space-purple opacity-40 font-mono">{inventarioActualizado.filter(p=>p.categoria===cat).length} Items</span></div>
                                         <div className="overflow-x-auto flex-1">
-                                            {/* Los productos están ordenados ascendentemente en su parte numérica del SKU */}
                                             <table className="w-full text-left text-xs text-white">
                                                 <thead className="bg-black/50 text-space-orange uppercase font-black text-[9px]"><tr><th className="p-4 text-white">SKU</th><th className="p-4 text-white">Nombre</th><th className="p-4 text-center text-white">Stock</th><th className="p-4 text-right text-white">ELIMINAR</th></tr></thead>
                                                 <tbody className="divide-y divide-white/5">
@@ -1165,7 +1202,7 @@
                             <div className="lg:col-span-4 glass-panel p-8 border-white/10 shadow-2xl">
                                 <h2 className="text-lg font-black mb-8 italic uppercase border-l-4 border-white pl-4 text-white tracking-widest">{newSujeto.id ? 'MODIFICAR SUJETO' : 'Directorio Maestro'}</h2>
                                 <form onSubmit={async (e)=>{ e.preventDefault(); if(newSujeto.id) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', newSujeto.id), { nombre: encryptVal(newSujeto.nombre.toUpperCase(), vaultKey), tipo: newSujeto.tipo, telefono: encryptVal(newSujeto.telefono, vaultKey) }); } else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), { nombre: encryptVal(newSujeto.nombre.toUpperCase(), vaultKey), tipo: newSujeto.tipo, telefono: encryptVal(newSujeto.telefono, vaultKey), timestamp: Date.now() }); } setNewSujeto({id:null, nombre:'', tipo:'Cliente', telefono:''}); mostrarNotificacion("Directorio Sincronizado."); }} className="space-y-6"><div className="grid grid-cols-3 gap-1.5 p-1.5 bg-black/40 rounded-xl border border-white/10 shadow-inner">{['Cliente', 'Proveedor', 'Distribuidor'].map(t => <button key={t} type="button" onClick={()=>setNewSujeto({...newSujeto, tipo:t})} className={`py-3 rounded-lg text-[8px] font-black uppercase transition-all ${newSujeto.tipo===t?'bg-white text-black shadow-xl':'text-slate-600'}`}>{t}</button>)}</div><input value={newSujeto.nombre} onChange={e=>setNewSujeto({...newSujeto, nombre:e.target.value})} placeholder="NOMBRE / ENTIDAD" className="w-full p-4 bg-black/60 rounded-xl text-xs font-black border border-white/5 outline-none uppercase" required /><input value={newSujeto.telefono} onChange={e=>setNewSujeto({...newSujeto, telefono:e.target.value})} placeholder="TELÉFONO / UPLINK" className="w-full p-4 bg-[#1a1a24] rounded-xl text-xs font-black border border-white/5 outline-none shadow-inner" /><button type="submit" className="w-full bg-white text-black font-black py-4 rounded-xl uppercase text-xs tracking-widest italic font-black">REGISTRAR SUJETO</button>{newSujeto.id && (<button type="button" onClick={() => setNewSujeto({ id: null, nombre: '', tipo: 'Cliente', telefono: '' })} className="w-full mt-2 bg-slate-800 text-white font-black py-2.5 rounded-xl uppercase text-[10px] border border-white/10 hover:bg-slate-700 italic">Cancelar</button>)}</form>
-                                <div className="mt-8 pt-8 border-t border-white/5 space-y-4"><h3 className="text-[10px] font-black uppercase text-cyber-green italic text-center tracking-widest">ACTUALIZACION MASIVA</h3><input type="file" ref={fileSujRef} onChange={(e) => uploadExcel(e, 'SUJETOS')} className="hidden" accept=".xlsx, .xls, .csv" /><div className="grid grid-cols-2 gap-2"><button onClick={() => fileSujRef.current.click()} className="py-3 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">CARGAR ARCHIVO</button><button onClick={() => downloadTemplate('SUJETOS')} className="py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">PLANTILLA</button></div></div>
+                                <div className="mt-8 pt-8 border-t border-white/5 space-y-4"><h3 className="text-[10px] font-black uppercase text-cyber-green italic text-center tracking-widest">CONCILIAR DIRECTORIO</h3><input type="file" ref={fileSujRef} onChange={(e) => uploadExcel(e, 'SUJETOS')} className="hidden" accept=".xlsx, .xls, .csv" /><div className="grid grid-cols-2 gap-2"><button onClick={() => fileSujRef.current.click()} className="py-3 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">Subir y Sincronizar</button><button onClick={() => downloadTemplate('SUJETOS')} className="py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">Plantilla Smart</button></div></div>
                             </div>
                             <div className="lg:col-span-8 glass-panel overflow-hidden h-[800px] flex flex-col border-white/5 text-white shadow-xl"><div className="p-6 bg-white/5 font-black uppercase text-[10px] border-b border-white/5 flex justify-between items-center"><span>Base de Datos Aliados</span><span className="opacity-40 italic font-mono">{sujetos.length} Registros</span></div><div className="overflow-x-auto flex-1 table-container"><table className="w-full text-left text-xs"><thead className="bg-[#101018] text-slate-500 uppercase font-black sticky top-0"><tr><th className="p-6 py-4 text-white">Tipo</th><th className="p-6 py-4 text-white font-white">Nombre de Entidad</th><th className="p-6 py-4 text-right text-white">ELIMINAR</th></tr></thead><tbody className="divide-y divide-white/5">{decryptedSujetos.map(s => (<tr key={s.id} className="hover:bg-white/10 font-black uppercase italic transition-all group border-l-4 border-l-transparent hover:border-l-space-purple"><td className="p-6"><span className={`px-3 py-1 rounded-md text-[7px] font-black border ${s.tipo==='Cliente'?'text-cyber-green border-cyber-green/30':s.tipo==='Proveedor'?'text-space-orange border-space-orange/30':'text-space-purple border-space-purple/30'}`}>{s.tipo}</span></td><td className="p-6 text-[11px] font-bold uppercase">{s.nombre}</td><td className="p-6 text-right flex justify-end gap-3 opacity-30 group-hover:opacity-100"><button onClick={()=>setNewSujeto({id:s.id, nombre:s.nombre, tipo:s.tipo, telefono:s.telefono})} className="text-blue-400 hover:scale-125 transition-all p-1"><i data-lucide="edit-3"></i></button><button onClick={async ()=>{ if(confirm('¿Anular?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', s.id)); }} className="text-red-500 hover:scale-125 transition-all p-1"><i data-lucide="trash-2"></i></button></td></tr>))}</tbody></table></div></div>
                         </div>
