@@ -165,7 +165,6 @@
             const [oldItems, setOldItems] = useState([]); 
             const [carrito, setCarrito] = useState([]);
             const [pagos, setPagos] = useState([]);
-            // MODIFICACIÓN: Añadida la propiedad descontarStock por cada producto
             const [itemActual, setItemActual] = useState({ productoId: '', sku: '', nombre: '', cantidad: 1, valorUnitario: 0, fraccion: 1, descontarStock: true });
             const [metodoActual, setMetodoActual] = useState({ metodo: 'Efectivo', monto: '', fechaPago: '', comentario: '' });
             const [datosVenta, setDatosVenta] = useState({ 
@@ -184,7 +183,8 @@
             const [newProduct, setNewProduct] = useState({ id: null, sku: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
             const [newSujeto, setNewSujeto] = useState({ id: null, nombre: '', tipo: 'Cliente', telefono: '' });
 
-            const staffDomi = ['Pipe', 'Havith', 'Valentino Rossi', 'Mono', 'Cris', 'JF', 'Delivery App' ];
+            // --- CORRECCIÓN: Actualización de la lista de domiciliarios ---
+            const staffDomi = ['Pipe', 'Havith', 'Valentino Rossi', 'Mono', 'Cris', 'JF', 'Delivery App'];
 
             useEffect(() => {
                 const unsubscribe = onAuthStateChanged(auth, (u) => {
@@ -306,23 +306,26 @@
 
             const totalAbonado = useMemo(() => pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0), [pagos]);
 
-            // --- CÁLCULO FINANCIERO FERCO/HADES ACTUALIZADO (Por Producto) ---
             const hadesSplit = useMemo(() => {
                 if (datosVenta.canal !== 'Hades' || carrito.length === 0) return { ferco: 0, hades: 0 };
                 let fercoShare = 0; let hadesShare = 0;
                 
                 carrito.forEach(it => {
                     const p = inventarioActualizado.find(x => x.id === it.productoId);
+                    
+                    // precioSocio es el precio al que Ferco Farma le vende a Hades (ej. 18.000)
                     const costoSocioTotal = (p?.precioSocio || 0) * parseFloat(it.cantidad) * it.fraccion;
+                    
+                    // valorUnitario es lo que el operador digitó que le cobró al cliente final (ej. 30.000)
                     const ventaTotalHades = parseFloat(it.valorUnitario) * parseFloat(it.cantidad) * it.fraccion;
                     
-                    // Verificación individual: ¿El producto afecta stock?
-                    // (Evaluamos !== false por si es un producto viejo guardado antes de esta actualización)
                     if (it.descontarStock !== false) {
+                        // Ferco Farma recoge su costo de distribuidor (18.000)
                         fercoShare += costoSocioTotal;
+                        // Hades se queda con el sobrante de la venta al cliente (30.000 - 18.000 = 12.000)
                         hadesShare += (ventaTotalHades - costoSocioTotal);
                     } else {
-                        // Si no descuenta stock, el 100% va a utilidades de Hades
+                        // Si no sale de bodega, Hades se queda con todo
                         hadesShare += ventaTotalHades;
                     }
                 });
@@ -471,7 +474,6 @@
                     if (editingVentaId) {
                         const netChanges = {};
                         
-                        // Revertimos solo si el producto afectaba stock (Ferco o descontarStock !== false)
                         oldItems.forEach(it => {
                             if (datosVenta.canal === 'Ferco Farma' || it.descontarStock !== false) {
                                 const pid = it.productoId;
@@ -481,7 +483,6 @@
                             }
                         });
 
-                        // Aplicamos los nuevos cambios bajo la misma lógica
                         carrito.forEach(it => {
                             if (datosVenta.canal === 'Ferco Farma' || it.descontarStock !== false) {
                                 const pid = it.productoId;
@@ -518,7 +519,6 @@
                             auditLog: `OP: ${user ? user.email : 'Admin'} | CANAL: ${datosVenta.canal}`
                         });
 
-                        // Descontamos solo si es Ferco o si el producto tiene descontarStock en true
                         for (const it of carrito) {
                             if (datosVenta.canal === 'Ferco Farma' || it.descontarStock !== false) {
                                 const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'productos', it.productoId);
@@ -853,10 +853,9 @@
 
                                         <div className="grid grid-cols-2 gap-2">
                                             <input type="number" value={itemActual.cantidad} onChange={e=>setItemActual({...itemActual, cantidad:e.target.value})} placeholder="Cantidad" className="bg-black/60 p-3 rounded-xl text-xs border border-white/5 font-black text-white" />
-                                            <input type="number" value={itemActual.valorUnitario} onChange={e=>setItemActual({...itemActual, valorUnitario:e.target.value})} placeholder="VALOR EQUIVALENTE $" className="bg-black/60 p-3 rounded-xl text-xs text-cyber-green font-black border border-white/5 outline-none focus:border-white placeholder:text-cyber-green/30 placeholder:drop-shadow-md shadow-inner" />
+                                            <input type="number" value={itemActual.valorUnitario} onChange={e=>setItemActual({...itemActual, valorUnitario:e.target.value})} placeholder="VALOR $" className="bg-black/60 p-3 rounded-xl text-xs text-cyber-green font-black border border-white/5 outline-none focus:border-white placeholder:text-cyber-green/30 placeholder:drop-shadow-md shadow-inner" />
                                         </div>
 
-                                        {/* MODIFICACIÓN: Interruptor por Producto (Solo para HADES) */}
                                         {datosVenta.canal === 'Hades' && (
                                             <div className="flex justify-between items-center p-2 bg-black/40 rounded-xl border border-hades-gold/20 shadow-inner mt-2 animate-in fade-in">
                                                 <span className="text-[9px] font-black uppercase text-hades-gold italic">
@@ -875,10 +874,17 @@
                                         <button type="button" onClick={()=>{ if(!itemActual.productoId || !itemActual.cantidad) return; setCarrito([...carrito, { ...itemActual, idT: Date.now(), subtotal: parseFloat(itemActual.cantidad) * itemActual.fraccion * parseFloat(itemActual.valorUnitario) }]); setItemActual({sku:'', nombre:'', productoId:'', cantidad:1, valorUnitario:0, fraccion: 1, descontarStock: true}); }} className="w-full py-3 bg-space-purple/10 text-space-purple border border-space-purple/30 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-md">AGREGAR A COMPRA</button>
                                     </div>
 
+                                    {/* CORRECCIÓN: Nombres Claros para el Cálculo Financiero */}
                                     {datosVenta.canal === 'Hades' && carrito.length > 0 && (
                                         <div className="p-4 hades-card rounded-2xl space-y-2 animate-in slide-in-from-top-2 shadow-2xl">
-                                            <div className="flex justify-between text-[9px] font-black uppercase text-slate-400"><span>Base FERCO FARMA (Costo Socio + Domi):</span><span className="text-cyber-green">${hadesSplit.ferco.toLocaleString()}</span></div>
-                                            <div className="flex justify-between text-[9px] font-black uppercase border-t border-white/5 pt-2 text-hades-gold"><span>Utilidad Neta HADES:</span><span>${hadesSplit.hades.toLocaleString()}</span></div>
+                                            <div className="flex justify-between text-[9px] font-black uppercase text-slate-400">
+                                                <span>Ingreso FERCO FARMA (Valor Distribuidor + Domi):</span>
+                                                <span className="text-cyber-green">${hadesSplit.ferco.toLocaleString()}</span>
+                                            </div>
+                                            <div className="flex justify-between text-[9px] font-black uppercase border-t border-white/5 pt-2 text-hades-gold">
+                                                <span>Ganancia HADES:</span>
+                                                <span>${hadesSplit.hades.toLocaleString()}</span>
+                                            </div>
                                         </div>
                                     )}
 
@@ -890,7 +896,6 @@
                                                         <tr key={it.idT} className="border-b border-white/5">
                                                             <td className="py-2 truncate max-w-[120px]">
                                                                 {it.nombre}
-                                                                {/* MODIFICACIÓN: Tag visual para entender qué productos descuentan y cuáles no */}
                                                                 {datosVenta.canal === 'Hades' && (
                                                                     <span className={`ml-2 px-1 py-0.5 rounded text-[6px] ${it.descontarStock !== false ? 'bg-cyber-green/20 text-cyber-green border border-cyber-green/30' : 'bg-space-orange/20 text-space-orange border border-space-orange/30'}`}>
                                                                         {it.descontarStock !== false ? 'FERCO' : 'EXT'}
@@ -914,7 +919,7 @@
                                         {datosVenta.entregaDomicilio && (
                                             <div className="space-y-2 animate-in fade-in">
                                                 <div className="grid grid-cols-4 gap-1">{staffDomi.map(s => <button key={s} type="button" onClick={()=>setDatosVenta({...datosVenta, domiciliarioAsignado: s})} className={`py-1.5 rounded text-[7px] border font-black uppercase ${datosVenta.domiciliarioAsignado===s?'bg-cyan-600 text-white border-cyan-600 shadow-md':'border-white/5 text-slate-500'}`}>{s}</button>)}</div>
-                                                <input type="number" value={datosVenta.valorDomicilio} onChange={e=>setDatosVenta({...datosVenta, valorDomicilio:e.target.value})} placeholder="VALOR EQUIVALENTE (DOMICILIO) $" className="w-full p-2.5 bg-black/50 border border-white/10 rounded-lg text-xs text-cyber-green font-black placeholder:text-cyber-green/30 placeholder:drop-shadow-md shadow-inner" />
+                                                <input type="number" value={datosVenta.valorDomicilio} onChange={e=>setDatosVenta({...datosVenta, valorDomicilio:e.target.value})} placeholder="VALOR DOMICILIO $" className="w-full p-2.5 bg-black/50 border border-white/10 rounded-lg text-xs text-cyber-green font-black placeholder:text-cyber-green/30 placeholder:drop-shadow-md shadow-inner" />
                                             </div>
                                         )}
                                         {datosVenta.entidad === 'Cliente' && (
@@ -926,7 +931,7 @@
                                     <div className="p-4 bg-black/30 rounded-2xl border border-white/5 space-y-3">
                                         <p className="text-[8px] font-black uppercase text-space-purple tracking-widest italic">Cuenta de Ingreso:</p>
                                         <div className="grid grid-cols-2 gap-2">
-                                            {['CRIS', 'JHON', 'HADES'].map(cta => (<button key={cta} type="button" onClick={() => setDatosVenta({...datosVenta, cuentaDestino: cta})} className={`py-2 rounded-lg text-[9px] font-black border transition-all ${datosVenta.cuentaDestino === cta ? 'bg-cyber-green text-black border-cyber-green shadow-md' : 'border-white/5 text-slate-500'}`}>{cta}</button>))}
+                                            {['CRIS', 'JHION'].map(cta => (<button key={cta} type="button" onClick={() => setDatosVenta({...datosVenta, cuentaDestino: cta})} className={`py-2 rounded-lg text-[9px] font-black border transition-all ${datosVenta.cuentaDestino === cta ? 'bg-cyber-green text-black border-cyber-green shadow-md' : 'border-white/5 text-slate-500'}`}>{cta}</button>))}
                                         </div>
                                     </div>
 
