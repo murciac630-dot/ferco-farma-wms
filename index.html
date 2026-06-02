@@ -184,7 +184,7 @@
             const [newProduct, setNewProduct] = useState({ id: null, sku: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
             const [newSujeto, setNewSujeto] = useState({ id: null, nombre: '', tipo: 'Cliente', telefono: '' });
 
-            const staffDomi = ['Pipe', 'Havith', 'Valentino Rossi', 'Mono', 'JF', 'Cris'];
+            const staffDomi = ['Pipe', 'Havith', 'Valentino Rossi', 'Mono', 'JF', 'Cris', 'Delivery_APP'];
 
             useEffect(() => {
                 const unsubscribe = onAuthStateChanged(auth, (u) => {
