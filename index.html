@@ -111,7 +111,6 @@
         const { useState, useEffect, useMemo, useRef } = React;
         const ReactApexChart = window.ReactApexCharts ? (window.ReactApexCharts.default || window.ReactApexCharts) : null;
 
-        // --- ENCRIPTACIÓN simétrica (AES-256) ---
         const encryptVal = (val, key) => {
             if (val === undefined || val === null || val === '') return '';
             return CryptoJS.AES.encrypt(String(val), key).toString();
@@ -166,11 +165,12 @@
             const [oldItems, setOldItems] = useState([]); 
             const [carrito, setCarrito] = useState([]);
             const [pagos, setPagos] = useState([]);
-            const [itemActual, setItemActual] = useState({ productoId: '', sku: '', nombre: '', cantidad: 1, valorUnitario: 0, fraccion: 1 });
+            // MODIFICACIÓN: Añadida la propiedad descontarStock por cada producto
+            const [itemActual, setItemActual] = useState({ productoId: '', sku: '', nombre: '', cantidad: 1, valorUnitario: 0, fraccion: 1, descontarStock: true });
             const [metodoActual, setMetodoActual] = useState({ metodo: 'Efectivo', monto: '', fechaPago: '', comentario: '' });
             const [datosVenta, setDatosVenta] = useState({ 
                 entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, domiciliarioAsignado: 'Pipe', 
-                valorDomicilio: 0, canal: 'Ferco Farma', descontarStockHades: true, aplicarDescuento: false, valorDescuento: 0, 
+                valorDomicilio: 0, canal: 'Ferco Farma', aplicarDescuento: false, valorDescuento: 0, 
                 cuentaDestino: 'CRIS'
             });
 
@@ -184,7 +184,7 @@
             const [newProduct, setNewProduct] = useState({ id: null, sku: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
             const [newSujeto, setNewSujeto] = useState({ id: null, nombre: '', tipo: 'Cliente', telefono: '' });
 
-            const staffDomi = ['Pipe', 'Havith', 'Valentino Rossi', 'Mono', 'JF', 'Cris', 'Delivery_APP'];
+            const staffDomi = ['Pipe', 'André', 'César', 'David'];
 
             useEffect(() => {
                 const unsubscribe = onAuthStateChanged(auth, (u) => {
@@ -292,18 +292,9 @@
             const getNextSKU = (tempProductosList) => {
                 const prefix = 'NASA-';
                 const listToScan = tempProductosList || inventarioActualizado;
-                
-                const nums = listToScan
-                    .filter(p => p.sku?.startsWith(prefix))
-                    .map(p => {
-                        const m = p.sku.match(/\d+/);
-                        return m ? parseInt(m[0], 10) : 0;
-                    });
-                
+                const nums = listToScan.filter(p => p.sku?.startsWith(prefix)).map(p => { const m = p.sku.match(/\d+/); return m ? parseInt(m[0], 10) : 0; });
                 const maxNum = nums.length > 0 ? Math.max(...nums) : 0;
-                const next = maxNum + 1;
-                
-                return `${prefix}${String(next).padStart(3, '0')}`;
+                return `${prefix}${String(maxNum + 1).padStart(3, '0')}`;
             };
 
             const totalOp = useMemo(() => {
@@ -315,20 +306,23 @@
 
             const totalAbonado = useMemo(() => pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0), [pagos]);
 
-            // --- CÁLCULO FINANCIERO FERCO/HADES ACTUALIZADO ---
+            // --- CÁLCULO FINANCIERO FERCO/HADES ACTUALIZADO (Por Producto) ---
             const hadesSplit = useMemo(() => {
                 if (datosVenta.canal !== 'Hades' || carrito.length === 0) return { ferco: 0, hades: 0 };
                 let fercoShare = 0; let hadesShare = 0;
                 
                 carrito.forEach(it => {
                     const p = inventarioActualizado.find(x => x.id === it.productoId);
-                    const costoSocioTotal = (p?.precioSocio || 0) * it.cantidad * it.fraccion;
-                    const ventaTotalHades = it.valorUnitario * it.cantidad * it.fraccion;
+                    const costoSocioTotal = (p?.precioSocio || 0) * parseFloat(it.cantidad) * it.fraccion;
+                    const ventaTotalHades = parseFloat(it.valorUnitario) * parseFloat(it.cantidad) * it.fraccion;
                     
-                    if (datosVenta.descontarStockHades) {
+                    // Verificación individual: ¿El producto afecta stock?
+                    // (Evaluamos !== false por si es un producto viejo guardado antes de esta actualización)
+                    if (it.descontarStock !== false) {
                         fercoShare += costoSocioTotal;
                         hadesShare += (ventaTotalHades - costoSocioTotal);
                     } else {
+                        // Si no descuenta stock, el 100% va a utilidades de Hades
                         hadesShare += ventaTotalHades;
                     }
                 });
@@ -379,42 +373,21 @@
                 if (skuTerm.length > 0) {
                     const p = inventarioActualizado.find(x => x.sku.toUpperCase() === skuTerm);
                     if (p && (!newProduct.id || newProduct.id !== p.id)) {
-                        setNewProduct({
-                            id: p.id,
-                            sku: p.sku,
-                            nombre: p.nombre,
-                            precioCosto: p.precioCosto,
-                            precioCliente: p.precioCliente,
-                            precioSocio: p.precioSocio,
-                            stockInicial: p.stockInicial,
-                            categoria: p.categoria
-                        });
+                        setNewProduct({ id: p.id, sku: p.sku, nombre: p.nombre, precioCosto: p.precioCosto, precioCliente: p.precioCliente, precioSocio: p.precioSocio, stockInicial: p.stockInicial, categoria: p.categoria });
                     }
                 }
             }, [newProduct.sku, inventarioActualizado]);
 
             const handleNewProductNameChange = (nombreVal) => {
                 let skuVal = newProduct.sku;
-                if (!newProduct.id && (!newProduct.sku || newProduct.sku.trim() === '')) {
-                    skuVal = getNextSKU();
-                }
-                setNewProduct(prev => ({
-                    ...prev,
-                    nombre: nombreVal,
-                    sku: skuVal
-                }));
+                if (!newProduct.id && (!newProduct.sku || newProduct.sku.trim() === '')) { skuVal = getNextSKU(); }
+                setNewProduct(prev => ({ ...prev, nombre: nombreVal, sku: skuVal }));
             };
 
             const handleCategoryChange = (cat) => {
                 let skuVal = newProduct.sku;
-                if (!newProduct.id && (!newProduct.sku || newProduct.sku.startsWith('PFNASA-') || newProduct.sku.startsWith('INASA-') || newProduct.sku.startsWith('ENASA-') || newProduct.sku.trim() === '')) {
-                    skuVal = getNextSKU();
-                }
-                setNewProduct(prev => ({
-                    ...prev,
-                    categoria: cat,
-                    sku: skuVal
-                }));
+                if (!newProduct.id && (!newProduct.sku || newProduct.sku.startsWith('PFNASA-') || newProduct.sku.startsWith('INASA-') || newProduct.sku.startsWith('ENASA-') || newProduct.sku.trim() === '')) { skuVal = getNextSKU(); }
+                setNewProduct(prev => ({ ...prev, categoria: cat, sku: skuVal }));
             };
 
             const selectProduct = (p) => {
@@ -440,72 +413,38 @@
 
                     if (!vaultAuthDoc) {
                         const verificationToken = encryptVal("FERCO_VAULT_ACTIVE", inputKey);
-                        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vault_control', 'auth'), {
-                            token: verificationToken
-                        });
-                        setVaultKey(inputKey);
-                        setIsVaultLocked(false);
-                        mostrarNotificacion("Bóveda e inicio de sesión configurado correctamente.");
+                        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vault_control', 'auth'), { token: verificationToken });
+                        setVaultKey(inputKey); setIsVaultLocked(false); mostrarNotificacion("Bóveda e inicio de sesión configurado correctamente.");
                     } else {
                         const decryptedCheck = decryptVal(vaultAuthDoc.token, inputKey);
-                        if (decryptedCheck === 'FERCO_VAULT_ACTIVE') {
-                            setVaultKey(inputKey);
-                            setIsVaultLocked(false);
-                            setVaultError('');
-                            mostrarNotificacion(`Uplink Seguro: ${authenticatedUser.email}`);
-                        } else {
-                            await signOut(auth);
-                            setVaultError("⚠️ Clave Maestra de Bodega incorrecta. Acceso denegado.");
-                        }
+                        if (decryptedCheck === 'FERCO_VAULT_ACTIVE') { setVaultKey(inputKey); setIsVaultLocked(false); setVaultError(''); mostrarNotificacion(`Uplink Seguro: ${authenticatedUser.email}`); } 
+                        else { await signOut(auth); setVaultError("⚠️ Clave Maestra de Bodega incorrecta. Acceso denegado."); }
                     }
                 } catch (err) {
                     console.error("Error de Login:", err);
-                    if (err.code === 'auth/invalid-credential') {
-                        setVaultError("⚠️ Credenciales inválidas. El correo o la contraseña son incorrectos.");
-                    } else if (err.code === 'auth/invalid-email') {
-                        setVaultError("⚠️ Formato de correo electrónico inválido.");
-                    } else if (err.code === 'auth/user-not-found') {
-                        setVaultError("⚠️ Usuario no registrado en la base de datos de autenticación.");
-                    } else {
-                        setVaultError("⚠️ Error de autenticación: " + err.message);
-                    }
+                    if (err.code === 'auth/invalid-credential') setVaultError("⚠️ Credenciales inválidas. El correo o la contraseña son incorrectos.");
+                    else if (err.code === 'auth/invalid-email') setVaultError("⚠️ Formato de correo electrónico inválido.");
+                    else if (err.code === 'auth/user-not-found') setVaultError("⚠️ Usuario no registrado en la base de datos de autenticación.");
+                    else setVaultError("⚠️ Error de autenticación: " + err.message);
                 }
             };
 
-            const handleSignOut = async () => {
-                await signOut(auth);
-                setIsVaultLocked(true);
-                setVaultKey('');
-                setLoginEmail('');
-                setLoginPassword('');
-                setInputKey('');
-            };
+            const handleSignOut = async () => { await signOut(auth); setIsVaultLocked(true); setVaultKey(''); setLoginEmail(''); setLoginPassword(''); setInputKey(''); };
 
             const iniciarEdicionDespacho = (v) => {
-                setEditingVentaId(v.id);
-                setCarrito(v.items || []);
-                setOldItems(JSON.parse(JSON.stringify(v.items || []))); 
+                setEditingVentaId(v.id); setCarrito(v.items || []); setOldItems(JSON.parse(JSON.stringify(v.items || []))); 
                 setDatosVenta({
-                    entidad: v.entidad || 'Cliente',
-                    nombreEntidad: v.nombreEntidad || '',
-                    canal: v.canal || 'Ferco Farma',
-                    cuentaDestino: v.cuentaDestino || 'CRIS',
-                    entregaDomicilio: v.entregaDomicilio || false,
-                    valorDomicilio: v.valorDomicilio || 0,
-                    domiciliarioAsignado: v.domiciliarioAsignado || 'Pipe',
-                    aplicarDescuento: v.aplicarDescuento || false,
-                    valorDescuento: v.valorDescuento || 0,
-                    descontarStockHades: v.descontarStockHades !== undefined ? v.descontarStockHades : true
+                    entidad: v.entidad || 'Cliente', nombreEntidad: v.nombreEntidad || '', canal: v.canal || 'Ferco Farma',
+                    cuentaDestino: v.cuentaDestino || 'CRIS', entregaDomicilio: v.entregaDomicilio || false,
+                    valorDomicilio: v.valorDomicilio || 0, domiciliarioAsignado: v.domiciliarioAsignado || 'Pipe',
+                    aplicarDescuento: v.aplicarDescuento || false, valorDescuento: v.valorDescuento || 0
                 });
                 mostrarNotificacion(`Cargando despacho de ${v.nombreEntidad} para modificación.`);
             };
 
             const cancelarEdicionDespacho = () => {
-                setEditingVentaId(null);
-                setOldItems([]);
-                setCarrito([]);
-                setPagos([]);
-                setDatosVenta({ entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, valorDomicilio: 0, canal: 'Ferco Farma', descontarStockHades: true, aplicarDescuento: false, valorDescuento: 0, cuentaDestino: 'CRIS', domiciliarioAsignado: 'Pipe' });
+                setEditingVentaId(null); setOldItems([]); setCarrito([]); setPagos([]);
+                setDatosVenta({ entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, valorDomicilio: 0, canal: 'Ferco Farma', aplicarDescuento: false, valorDescuento: 0, cuentaDestino: 'CRIS', domiciliarioAsignado: 'Pipe' });
             };
 
             const registrarOActualizarDespacho = async (e) => {
@@ -524,35 +463,37 @@
                         items: encryptVal(JSON.stringify(carrito), vaultKey),
                         pagos: encryptVal(JSON.stringify(pagos), vaultKey),
                         split: encryptVal(JSON.stringify(hadesSplit), vaultKey),
-                        entregaDomicilio: datosVenta.entregaDomicilio,
-                        valorDomicilio: datosVenta.valorDomicilio,
-                        domiciliarioAsignado: datosVenta.domiciliarioAsignado,
-                        aplicarDescuento: datosVenta.aplicarDescuento,
-                        valorDescuento: datosVenta.valorDescuento,
-                        descontarStockHades: datosVenta.descontarStockHades
+                        entregaDomicilio: datosVenta.entregaDomicilio, valorDomicilio: datosVenta.valorDomicilio,
+                        domiciliarioAsignado: datosVenta.domiciliarioAsignado, aplicarDescuento: datosVenta.aplicarDescuento,
+                        valorDescuento: datosVenta.valorDescuento
                     };
 
                     if (editingVentaId) {
                         const netChanges = {};
                         
+                        // Revertimos solo si el producto afectaba stock (Ferco o descontarStock !== false)
                         oldItems.forEach(it => {
-                            const pid = it.productoId;
-                            const cant = parseFloat(it.cantidad) * (it.fraccion || 1);
-                            if (!netChanges[pid]) netChanges[pid] = 0;
-                            netChanges[pid] += datosVenta.entidad === 'Proveedor' ? -cant : cant;
+                            if (datosVenta.canal === 'Ferco Farma' || it.descontarStock !== false) {
+                                const pid = it.productoId;
+                                const cant = parseFloat(it.cantidad) * (it.fraccion || 1);
+                                if (!netChanges[pid]) netChanges[pid] = 0;
+                                netChanges[pid] += datosVenta.entidad === 'Proveedor' ? -cant : cant;
+                            }
                         });
 
+                        // Aplicamos los nuevos cambios bajo la misma lógica
                         carrito.forEach(it => {
-                            const pid = it.productoId;
-                            const cant = parseFloat(it.cantidad) * (it.fraccion || 1);
-                            if (!netChanges[pid]) netChanges[pid] = 0;
-                            netChanges[pid] += datosVenta.entidad === 'Proveedor' ? cant : -cant;
+                            if (datosVenta.canal === 'Ferco Farma' || it.descontarStock !== false) {
+                                const pid = it.productoId;
+                                const cant = parseFloat(it.cantidad) * (it.fraccion || 1);
+                                if (!netChanges[pid]) netChanges[pid] = 0;
+                                netChanges[pid] += datosVenta.entidad === 'Proveedor' ? cant : -cant;
+                            }
                         });
 
                         for (const pid of Object.keys(netChanges)) {
                             const diff = netChanges[pid];
                             if (diff === 0) continue;
-
                             const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'productos', pid);
                             const pData = inventarioActualizado.find(x => x.id === pid);
                             if (pData) {
@@ -563,26 +504,23 @@
 
                         const ref = doc(db, 'artifacts', appId, 'public', 'data', 'ventas', editingVentaId);
                         await updateDoc(ref, {
-                            ...dataPayload,
-                            estado: estadoInicial,
+                            ...dataPayload, estado: estadoInicial,
                             auditLog: `MODIFICADO: ${user ? user.email : 'Admin'} el ${new Date().toLocaleDateString()}`
                         });
 
-                        setEditingVentaId(null);
-                        setOldItems([]);
+                        setEditingVentaId(null); setOldItems([]);
                         mostrarNotificacion("Registro de despacho actualizado de forma segura.");
                     } else {
                         const ahora = new Date();
                         await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), {
-                            ...dataPayload, 
-                            estado: estadoInicial, 
-                            timestamp: Date.now(),
+                            ...dataPayload, estado: estadoInicial, timestamp: Date.now(),
                             fecha: ahora.toLocaleDateString(), hora: ahora.toLocaleTimeString(),
                             auditLog: `OP: ${user ? user.email : 'Admin'} | CANAL: ${datosVenta.canal}`
                         });
 
-                        if (datosVenta.descontarStockHades || datosVenta.canal === 'Ferco Farma') {
-                            for (const it of carrito) {
+                        // Descontamos solo si es Ferco o si el producto tiene descontarStock en true
+                        for (const it of carrito) {
+                            if (datosVenta.canal === 'Ferco Farma' || it.descontarStock !== false) {
                                 const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'productos', it.productoId);
                                 const pData = inventarioActualizado.find(x => x.id === it.productoId);
                                 if (pData) {
@@ -597,7 +535,7 @@
                     }
 
                     setCarrito([]); setPagos([]);
-                    setDatosVenta(prev => ({ ...prev, entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, valorDomicilio: 0, canal: 'Ferco Farma', descontarStockHades: true, aplicarDescuento: false, valorDescuento: 0, cuentaDestino: 'CRIS' }));
+                    setDatosVenta(prev => ({ ...prev, entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, valorDomicilio: 0, canal: 'Ferco Farma', aplicarDescuento: false, valorDescuento: 0, cuentaDestino: 'CRIS' }));
                 } catch (err) { mostrarNotificacion("Falla de enlace de datos cloud.", "error"); }
             };
 
@@ -609,9 +547,7 @@
                             return { ...p, metodo: nuevoMetodo, monto: parseFloat(montoEfectivo) || p.monto, fechaRecaudo: fechaEfectiva, comentario: `${p.comentario || ''} | LIQUIDADO ${fechaEfectiva}: ${observacionCierre}`.trim() };
                         } return p;
                     });
-                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', venta.id), {
-                        estado: 'Pagado', pagos: encryptVal(JSON.stringify(pagosActualizados), vaultKey)
-                    });
+                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', venta.id), { estado: 'Pagado', pagos: encryptVal(JSON.stringify(pagosActualizados), vaultKey) });
                     setSaldarModal({ show: false, venta: null, nuevoMetodo: 'Efectivo', montoEfectivo: '', fechaEfectiva: '', observacionCierre: '' });
                     mostrarNotificacion("Compromiso saldado.");
                 } catch (err) { mostrarNotificacion("Error.", "error"); }
@@ -623,62 +559,31 @@
                 const normalizedCat = normalizarCategoria(newProduct.categoria);
 
                 const encryptedData = { 
-                    sku: skuF, 
-                    categoria: normalizedCat, 
-                    nombre: encryptVal(newProduct.nombre.toUpperCase(), vaultKey), 
-                    precioCosto: encryptVal(newProduct.precioCosto, vaultKey), 
-                    precioSocio: encryptVal(newProduct.precioSocio, vaultKey),
+                    sku: skuF, categoria: normalizedCat, nombre: encryptVal(newProduct.nombre.toUpperCase(), vaultKey), 
+                    precioCosto: encryptVal(newProduct.precioCosto, vaultKey), precioSocio: encryptVal(newProduct.precioSocio, vaultKey),
                     precioCliente: normalizedCat === 'Empaque' ? encryptVal(0, vaultKey) : encryptVal(newProduct.precioCliente, vaultKey),
-                    stockActual: parseFloat(newProduct.stockInicial) || 0, 
-                    stockInicial: parseFloat(newProduct.stockInicial) || 0, 
-                    timestamp: Date.now()
+                    stockActual: parseFloat(newProduct.stockInicial) || 0, stockInicial: parseFloat(newProduct.stockInicial) || 0, timestamp: Date.now()
                 };
 
-                if (newProduct.id) {
-                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', newProduct.id), encryptedData);
-                } else {
-                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), encryptedData);
-                }
+                if (newProduct.id) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', newProduct.id), encryptedData);
+                else await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), encryptedData);
                 setNewProduct({ id: null, sku: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
                 mostrarNotificacion("Catálogo de inventarios actualizado.");
             };
 
             const eliminarTodoElInventario = async () => {
                 const confirmacion = window.prompt('⚠️ ADVERTENCIA CRÍTICA: Estás a punto de vaciar todo el inventario.\nEscribe la frase "ELIMINAR TODO" para confirmar esta acción:');
-                
-                if (confirmacion !== 'ELIMINAR TODO') {
-                    mostrarNotificacion("Operación abortada por seguridad.", "error");
-                    return;
-                }
-
+                if (confirmacion !== 'ELIMINAR TODO') { mostrarNotificacion("Operación abortada por seguridad.", "error"); return; }
                 try {
                     setIsSyncing(true);
                     const querySnapshot = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'productos'));
-                    
-                    const batch = writeBatch(db);
-                    let count = 0;
-
-                    querySnapshot.forEach((document) => {
-                        batch.delete(document.ref);
-                        count++;
-                    });
-
-                    if (count === 0) {
-                        mostrarNotificacion("La base de datos ya está vacía.");
-                        setIsSyncing(false);
-                        return;
-                    }
-
+                    const batch = writeBatch(db); let count = 0;
+                    querySnapshot.forEach((document) => { batch.delete(document.ref); count++; });
+                    if (count === 0) { mostrarNotificacion("La base de datos ya está vacía."); setIsSyncing(false); return; }
                     await batch.commit();
-                    
                     mostrarNotificacion(`Limpieza exitosa. Se eliminaron ${count} productos permanentemente.`);
                     setNewProduct({ id: null, sku: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
-                } catch (error) {
-                    console.error("Error en batch delete:", error);
-                    mostrarNotificacion("Falla de enlace al intentar eliminar los datos.", "error");
-                } finally {
-                    setIsSyncing(false);
-                }
+                } catch (error) { mostrarNotificacion("Falla de enlace al intentar eliminar los datos.", "error"); } finally { setIsSyncing(false); }
             };
 
             const uploadExcel = async (e, type) => {
@@ -692,77 +597,37 @@
                         if (type === 'INVENTARIO') {
                             const excelIds = new Set(data.map(row => row.ID).filter(Boolean));
                             const excelSkus = new Set(data.map(row => String(row.SKU || '').trim().toUpperCase()).filter(Boolean));
-                            
                             let eliminados = 0;
                             const itemsAEliminar = inventarioActualizado.filter(p => !excelIds.has(p.id) && !excelSkus.has(p.sku.toUpperCase()));
-                            
-                            for (const item of itemsAEliminar) {
-                                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', item.id));
-                                eliminados++;
-                            }
+                            for (const item of itemsAEliminar) { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', item.id)); eliminados++; }
 
-                            let creados = 0; let actualizados = 0;
-                            let currentBatch = [...inventarioActualizado];
-
+                            let creados = 0; let actualizados = 0; let currentBatch = [...inventarioActualizado];
                             for (const row of data) {
-                                let skuE = String(row.SKU || "").trim().toUpperCase(); 
-                                const cat = normalizarCategoria(row.Categoria || 'Producto Final');
+                                let skuE = String(row.SKU || "").trim().toUpperCase(); const cat = normalizarCategoria(row.Categoria || 'Producto Final');
                                 if (!skuE) skuE = getNextSKU(currentBatch);
-                                
                                 const exist = currentBatch.find(p => (row.ID && p.id === row.ID) || p.sku.toUpperCase() === skuE); 
                                 const parsedStock = parseFloat(row.Stock) || 0;
                                 const prodData = {
-                                    sku: skuE, 
-                                    categoria: cat, 
-                                    nombre: encryptVal(String(row.Nombre || "PRODUCTO").toUpperCase(), vaultKey),
-                                    precioCosto: encryptVal(parseFloat(row.Costo) || 0, vaultKey), 
-                                    precioCliente: encryptVal(parseFloat(row.Precio_Cliente) || 0, vaultKey), 
-                                    precioSocio: encryptVal(parseFloat(row.Precio_Socio) || 0, vaultKey),
-                                    stockActual: parsedStock, 
-                                    stockInicial: parsedStock, 
-                                    timestamp: Date.now()
+                                    sku: skuE, categoria: cat, nombre: encryptVal(String(row.Nombre || "PRODUCTO").toUpperCase(), vaultKey),
+                                    precioCosto: encryptVal(parseFloat(row.Costo) || 0, vaultKey), precioCliente: encryptVal(parseFloat(row.Precio_Cliente) || 0, vaultKey), 
+                                    precioSocio: encryptVal(parseFloat(row.Precio_Socio) || 0, vaultKey), stockActual: parsedStock, stockInicial: parsedStock, timestamp: Date.now()
                                 };
-                                
-                                if (exist) {
-                                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', exist.id), prodData);
-                                    actualizados++;
-                                } else {
-                                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), prodData);
-                                    creados++;
-                                }
+                                if (exist) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', exist.id), prodData); actualizados++; } 
+                                else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), prodData); creados++; }
                             }
                             mostrarNotificacion(`Conciliación de Inventario: ${creados} Creados, ${actualizados} Actualizados, ${eliminados} Eliminados.`);
                         } else if (type === 'SUJETOS') {
-                            const excelIds = new Set(data.map(row => row.ID).filter(Boolean));
-                            const excelNames = new Set(data.map(row => String(row.Nombre || '').trim().toUpperCase()).filter(Boolean));
-                            
-                            let eliminados = 0;
-                            const sujetosAEliminar = decryptedSujetos.filter(s => !excelIds.has(s.id) && !excelNames.has(s.nombre.toUpperCase()));
-                            
-                            for (const s of sujetosAEliminar) {
-                                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', s.id));
-                                eliminados++;
-                            }
+                            const excelIds = new Set(data.map(row => row.ID).filter(Boolean)); const excelNames = new Set(data.map(row => String(row.Nombre || '').trim().toUpperCase()).filter(Boolean));
+                            let eliminados = 0; const sujetosAEliminar = decryptedSujetos.filter(s => !excelIds.has(s.id) && !excelNames.has(s.nombre.toUpperCase()));
+                            for (const s of sujetosAEliminar) { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', s.id)); eliminados++; }
 
                             let creados = 0; let actualizados = 0;
                             for (const row of data) { 
                                 if (row.Nombre) {
-                                    const nameE = String(row.Nombre).trim().toUpperCase();
-                                    const exist = decryptedSujetos.find(s => (row.ID && s.id === row.ID) || s.nombre.toUpperCase() === nameE);
-                                    const sujetoData = {
-                                        nombre: encryptVal(nameE, vaultKey), 
-                                        tipo: row.Tipo || 'Cliente', 
-                                        telefono: encryptVal(row.Telefono || '', vaultKey), 
-                                        timestamp: Date.now()
-                                    };
-
-                                    if (exist) {
-                                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', exist.id), sujetoData);
-                                        actualizados++;
-                                    } else {
-                                        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), sujetoData);
-                                        creados++;
-                                    }
+                                    const nameE = String(row.Nombre).trim().toUpperCase(); const exist = decryptedSujetos.find(s => (row.ID && s.id === row.ID) || s.nombre.toUpperCase() === nameE);
+                                    const sujetoData = { nombre: encryptVal(nameE, vaultKey), tipo: row.Tipo || 'Cliente', telefono: encryptVal(row.Telefono || '', vaultKey), timestamp: Date.now() };
+                                    if (exist) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', exist.id), sujetoData); actualizados++; } 
+                                    else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), sujetoData); creados++; }
                                 }
                             }
                             mostrarNotificacion(`Conciliación de Sujetos: ${creados} Creados, ${actualizados} Actualizados, ${eliminados} Eliminados.`);
@@ -772,61 +637,23 @@
                                 const idV = row.ID_Venta || '';
                                 if (idV) {
                                     if (!excelVentas[idV]) {
-                                        excelVentas[idV] = {
-                                            id: idV, fecha: row.Fecha, hora: row.Hora, cliente: row.Sujeto, tipoCliente: row.Tipo_Sujeto || 'Cliente',
-                                            canal: row.Canal || 'Ferco Farma', cuentaIngreso: row.Cuenta_Ingreso || 'CRIS', estado: row.Estado || 'Pagado',
-                                            total: parseFloat(row.Total) || 0, metodo: row.Metodo || 'Efectivo', obs: row.Obs || '', items: []
-                                        };
+                                        excelVentas[idV] = { id: idV, fecha: row.Fecha, hora: row.Hora, cliente: row.Sujeto, tipoCliente: row.Tipo_Sujeto || 'Cliente', canal: row.Canal || 'Ferco Farma', cuentaIngreso: row.Cuenta_Ingreso || 'CRIS', estado: row.Estado || 'Pagado', total: parseFloat(row.Total) || 0, metodo: row.Metodo || 'Efectivo', obs: row.Obs || '', items: [] };
                                     }
                                     const p = inventarioActualizado.find(x => x.sku === row.SKU);
-                                    excelVentas[idV].items.push({
-                                        productoId: p ? p.id : 'temp-id', sku: row.SKU, nombre: p ? p.nombre : 'Producto', whitespace: 1,
-                                        cantidad: parseFloat(row.Cantidad) || 1, valorUnitario: parseFloat(row.Valor_Uni) || 0, fraccion: 1
-                                    });
+                                    excelVentas[idV].items.push({ productoId: p ? p.id : 'temp-id', sku: row.SKU, nombre: p ? p.nombre : 'Producto', whitespace: 1, cantidad: parseFloat(row.Cantidad) || 1, valorUnitario: parseFloat(row.Valor_Uni) || 0, fraccion: 1, descontarStock: true });
                                 }
                             });
 
-                            const excelVentaIds = new Set(Object.keys(excelVentas));
-                            let eliminados = 0;
-                            if (excelVentaIds.size > 0) {
-                                const ventasAEliminar = decryptedVentas.filter(v => !excelVentaIds.has(v.id));
-                                for (const v of ventasAEliminar) {
-                                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', v.id));
-                                    eliminados++;
-                                }
-                            }
+                            const excelVentaIds = new Set(Object.keys(excelVentas)); let eliminados = 0;
+                            if (excelVentaIds.size > 0) { const ventasAEliminar = decryptedVentas.filter(v => !excelVentaIds.has(v.id)); for (const v of ventasAEliminar) { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', v.id)); eliminados++; } }
 
                             let creados = 0; let actualizados = 0;
                             for (const key of Object.keys(excelVentas)) {
-                                const row = excelVentas[key];
-                                const exist = decryptedVentas.find(v => v.id === row.id);
-                                
-                                const mP = [{ metodo: row.metodo, monto: row.total, comentario: row.obs }];
-                                const splitBase = { ferco: row.total, hades: 0 };
-
-                                const ventaPayload = {
-                                    entidad: row.tipoCliente, canal: row.canal, cuentaDestino: row.cuentaIngreso,
-                                    nombreEntidad: encryptVal(row.cliente.toUpperCase(), vaultKey),
-                                    responsable: encryptVal(user ? user.email : 'CARGA_MASIVA', vaultKey),
-                                    totalVenta: encryptVal(row.total, vaultKey),
-                                    items: encryptVal(JSON.stringify(row.items), vaultKey),
-                                    pagos: encryptVal(JSON.stringify(mP), vaultKey),
-                                    split: encryptVal(JSON.stringify(splitBase), vaultKey),
-                                    estado: row.estado
-                                };
-
-                                if (exist) {
-                                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', exist.id), ventaPayload);
-                                    actualizados++;
-                                } else {
-                                    const ahora = new Date();
-                                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), {
-                                        ...ventaPayload, timestamp: Date.now(),
-                                        fecha: row.fecha || ahora.toLocaleDateString(), hora: row.hora || ahora.toLocaleTimeString(),
-                                        auditLog: 'SINCRONIZACIÓN EXCEL'
-                                    });
-                                    creados++;
-                                }
+                                const row = excelVentas[key]; const exist = decryptedVentas.find(v => v.id === row.id);
+                                const mP = [{ metodo: row.metodo, monto: row.total, comentario: row.obs }]; const splitBase = { ferco: row.total, hades: 0 };
+                                const ventaPayload = { entidad: row.tipoCliente, canal: row.canal, cuentaDestino: row.cuentaIngreso, nombreEntidad: encryptVal(row.cliente.toUpperCase(), vaultKey), responsable: encryptVal(user ? user.email : 'CARGA_MASIVA', vaultKey), totalVenta: encryptVal(row.total, vaultKey), items: encryptVal(JSON.stringify(row.items), vaultKey), pagos: encryptVal(JSON.stringify(mP), vaultKey), split: encryptVal(JSON.stringify(splitBase), vaultKey), estado: row.estado };
+                                if (exist) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', exist.id), ventaPayload); actualizados++; } 
+                                else { const ahora = new Date(); await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), { ...ventaPayload, timestamp: Date.now(), fecha: row.fecha || ahora.toLocaleDateString(), hora: row.hora || ahora.toLocaleTimeString(), auditLog: 'SINCRONIZACIÓN EXCEL' }); creados++; }
                             }
                             mostrarNotificacion(`Conciliación de Despachos: ${creados} Creados, ${actualizados} Actualizados, ${eliminados} Eliminados.`);
                         }
@@ -838,35 +665,14 @@
                 let data = [];
                 if (type === 'INVENTARIO') {
                     if (inventarioActualizado.length > 0) {
-                        data = inventarioActualizado.map(p => ({
-                            ID: p.id,
-                            SKU: p.sku, 
-                            Nombre: p.nombre, 
-                            Categoria: p.categoria, 
-                            Costo: p.precioCosto,
-                            Precio_Cliente: p.precioCliente, 
-                            Precio_Socio: p.precioSocio, 
-                            Stock: p.stockActual
-                        }));    
+                        data = inventarioActualizado.map(p => ({ ID: p.id, SKU: p.sku, Nombre: p.nombre, Categoria: p.categoria, Costo: p.precioCosto, Precio_Cliente: p.precioCliente, Precio_Socio: p.precioSocio, Stock: p.stockActual }));    
                     } else {
-                        data = [{
-                            ID: "",
-                            SKU: "NASA-001", 
-                            Nombre: "ACETAMINOFEN",
-                            Categoria: "Producto Final",
-                            Costo: 1000,
-                            Precio_Cliente: 1500,
-                            Precio_Socio: 1200,
-                            Stock: 50
-                        }];
+                        data = [{ ID: "", SKU: "NASA-001", Nombre: "ACETAMINOFEN", Categoria: "Producto Final", Costo: 1000, Precio_Cliente: 1500, Precio_Socio: 1200, Stock: 50 }];
                     }
                 }
                 if (type === 'SUJETOS') {
-                    if (decryptedSujetos.length > 0) {
-                        data = decryptedSujetos.map(s => ({ Nombre: s.nombre, Tipo: s.tipo, Telefono: s.telefono }));
-                    } else {
-                        data = [{ Nombre: "JUAN PEREZ", Tipo: "Cliente", Telefono: "300123456" }];
-                    }
+                    if (decryptedSujetos.length > 0) data = decryptedSujetos.map(s => ({ Nombre: s.nombre, Tipo: s.tipo, Telefono: s.telefono }));
+                    else data = [{ Nombre: "JUAN PEREZ", Tipo: "Cliente", Telefono: "300123456" }];
                 }
                 if (type === 'DESPACHOS') {
                     if (decryptedVentas.length > 0) {
@@ -876,8 +682,7 @@
                                 data.push({
                                     Fecha: v.fecha, Hora: v.hora, Sujeto: v.nombreEntidad, Tipo_Sujeto: v.entidad, Canal: v.canal,
                                     SKU: it.sku, Cantidad: it.cantidad, Valor_Uni: it.valorUnitario, Total: v.totalVenta,
-                                    Metodo: v.pagos?.map(p => p.metodo).join(', ') || 'Efectivo',
-                                    Obs: v.pagos?.map(p => p.comentario).filter(Boolean).join(' | ') || '',
+                                    Metodo: v.pagos?.map(p => p.metodo).join(', ') || 'Efectivo', Obs: v.pagos?.map(p => p.comentario).filter(Boolean).join(' | ') || '',
                                     Cuenta_Ingreso: v.cuentaDestino || 'CRIS', Estado: v.estado || 'Pagado'
                                 });
                             });
@@ -891,18 +696,11 @@
             const exportarPlantilla = () => downloadTemplate('INVENTARIO');
 
             const exportarVentas = () => {
-                const ws = XLSX.utils.json_to_sheet(decryptedVentas.map(v => ({ 
-                    ID: v.id, FECHA: v.fecha, HORA: v.hora, CANAL: v.canal, TIPO: v.entidad, 
-                    SUJETO: v.nombreEntidad, CUENTA_INGRESO: v.cuentaDestino || 'CRIS', STATUS: v.estado, TOTAL: v.totalVenta 
-                })));
-                const wb = XLSX.utils.book_new(); 
-                XLSX.utils.book_append_sheet(wb, ws, "Log"); 
-                XLSX.writeFile(wb, `FERCO_FINANCE_REPORT_${Date.now()}.xlsx`);
+                const ws = XLSX.utils.json_to_sheet(decryptedVentas.map(v => ({ ID: v.id, FECHA: v.fecha, HORA: v.hora, CANAL: v.canal, TIPO: v.entidad, SUJETO: v.nombreEntidad, CUENTA_INGRESO: v.cuentaDestino || 'CRIS', STATUS: v.estado, TOTAL: v.totalVenta })));
+                const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Log"); XLSX.writeFile(wb, `FERCO_FINANCE_REPORT_${Date.now()}.xlsx`);
             };
 
-            useEffect(() => { 
-                if (!loading && window.lucide) window.lucide.createIcons(); 
-            }, [loading, view, productos, ventas, carrito, datosVenta, sujetos, pagos, metodoActual, newProduct, newSujeto, showProductList, showSubjectList, saldarModal, isVaultLocked, editingVentaId]);
+            useEffect(() => { if (!loading && window.lucide) window.lucide.createIcons(); }, [loading, view, productos, ventas, carrito, datosVenta, sujetos, pagos, metodoActual, newProduct, newSujeto, showProductList, showSubjectList, saldarModal, isVaultLocked, editingVentaId, itemActual]);
 
             if (loading) return <div className="flex h-screen items-center justify-center bg-[#020206] text-space-purple font-black animate-pulse">Central FERCO FARMA Activo...</div>;
 
@@ -911,14 +709,10 @@
                     <div className="flex h-screen items-center justify-center bg-[#020206] p-4 text-white font-sans relative">
                         <div className="scanline"></div>
                         <div className="glass-panel max-w-md w-full p-8 space-y-6 border border-[#9333ea]/30 text-center shadow-[0_0_50px_rgba(147,51,234,0.15)] animate-in fade-in duration-300">
-                            <div className="flex justify-center mb-2">
-                                <div className="p-4 bg-space-purple/10 rounded-full border border-space-purple/20 animate-pulse"><i data-lucide="shield-alert" className="w-12 h-12 text-space-purple"></i></div>
-                            </div>
+                            <div className="flex justify-center mb-2"><div className="p-4 bg-space-purple/10 rounded-full border border-space-purple/20 animate-pulse"><i data-lucide="shield-alert" className="w-12 h-12 text-space-purple"></i></div></div>
                             <div>
                                 <h2 className="text-xl font-black uppercase text-white tracking-tighter italic">{!vaultAuthDoc ? "ESTABLECER ACCESOS" : "PORTAL DE ACCESO SEGURO"}</h2>
-                                <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mt-1">
-                                    {!vaultAuthDoc ? "Defina la clave maestra de encriptación de datos" : "Escriba sus credenciales de Google y la clave maestra"}
-                                </p>
+                                <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mt-1">{!vaultAuthDoc ? "Defina la clave maestra de encriptación de datos" : "Escriba sus credenciales de Google y la clave maestra"}</p>
                             </div>
                             <form onSubmit={handleUnlockVault} className="space-y-4">
                                 <input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="CORREO CORPORATIVO..." className="w-full p-3 bg-black/60 rounded-xl text-xs font-bold border border-white/10 text-center text-white placeholder-slate-700 outline-none" required />
@@ -974,12 +768,8 @@
                             {['dashboard', 'despacho', 'inventario', 'directorio'].map(v => (<button key={v} onClick={() => setView(v)} className={`px-5 py-2 rounded-lg font-black text-[9px] uppercase transition-all ${view===v?'bg-white text-black shadow-xl':'text-slate-500 hover:text-white'}`}>{v.toUpperCase()}</button>))}
                         </nav>
                         <div className="flex gap-2">
-                            <button onClick={handleSignOut} className="px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 font-black text-[9px] uppercase hover:bg-red-500 hover:text-white transition-all">
-                                <i data-lucide="lock" className="w-3.5 h-3.5 inline mr-1"></i> Cerrar Sesión
-                            </button>
-                            <button onClick={exportarVentas} className="px-5 py-2.5 rounded-lg bg-cyber-green text-black font-black text-[10px] uppercase hover:scale-105 transition-all flex items-center gap-2">
-                                <i data-lucide="download-cloud"></i> INFORME
-                            </button>
+                            <button onClick={handleSignOut} className="px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 font-black text-[9px] uppercase hover:bg-red-500 hover:text-white transition-all"><i data-lucide="lock" className="w-3.5 h-3.5 inline mr-1"></i> Cerrar Sesión</button>
+                            <button onClick={exportarVentas} className="px-5 py-2.5 rounded-lg bg-cyber-green text-black font-black text-[10px] uppercase hover:scale-105 transition-all flex items-center gap-2"><i data-lucide="download-cloud"></i> INFORME</button>
                         </div>
                     </header>
 
@@ -1021,22 +811,6 @@
                                         {['Ferco Farma', 'Hades'].map(c => <button key={c} type="button" onClick={()=>setDatosVenta({...datosVenta, canal:c, entidad: 'Cliente'})} className={`py-3 rounded-lg text-[10px] font-black uppercase transition-all ${datosVenta.canal===c?'bg-space-orange text-white shadow-lg':'text-slate-600'}`}>{c}</button>)}
                                     </div>
 
-                                    {/* NUEVO: Botón Toggle condicional solo para HADES */}
-                                    {datosVenta.canal === 'Hades' && (
-                                        <div className="flex justify-between items-center p-3 bg-black/40 rounded-xl border border-hades-gold/20 shadow-inner mt-2 animate-in fade-in">
-                                            <span className="text-[9px] font-black uppercase text-hades-gold italic">
-                                                ¿Descontar mercancía de Ferco Farma?
-                                            </span>
-                                            <button 
-                                                type="button" 
-                                                onClick={() => setDatosVenta({...datosVenta, descontarStockHades: !datosVenta.descontarStockHades})} 
-                                                className={`w-10 h-5 rounded-full relative transition-all shadow-md ${datosVenta.descontarStockHades ? 'bg-hades-gold' : 'bg-slate-800'}`}
-                                            >
-                                                <div className={`absolute top-0.5 w-4 h-4 bg-black rounded-full transition-all ${datosVenta.descontarStockHades ? 'right-0.5' : 'left-0.5'}`}></div>
-                                            </button>
-                                        </div>
-                                    )}
-
                                     {datosVenta.canal !== 'Hades' && (
                                         <div className="flex p-1 bg-black/40 rounded-xl border border-white/10 shadow-inner">
                                             {['Cliente', 'Distribuidor', 'Proveedor'].map(ent => (
@@ -1060,13 +834,7 @@
                                     <div className="space-y-3">
                                         <div className="relative">
                                             <input type="text" value={itemActual.sku} onFocus={() => setShowProductList(true)} onChange={(e)=>setItemActual({...itemActual, sku: e.target.value, productoId:''})} placeholder="SKU / PRODUCTO..." className="w-full p-3 bg-black/60 rounded-xl text-xs border border-[#00f3ff]/20 focus:border-space-purple outline-none font-bold uppercase text-white shadow-inner" />
-                                            
-                                            {itemActual.nombre && (
-                                                <div className="text-[10px] text-cyber-green font-black uppercase mt-1">
-                                                    ✓ Seleccionado: {itemActual.nombre}
-                                                </div>
-                                            )}
-
+                                            {itemActual.nombre && (<div className="text-[10px] text-cyber-green font-black uppercase mt-1">✓ Seleccionado: {itemActual.nombre}</div>)}
                                             {showProductList && (
                                                 <div className="selectable-list">
                                                     {inventarioActualizado.filter(p => p.sku.toLowerCase().includes(itemActual.sku.toLowerCase()) || p.nombre.toLowerCase().includes(itemActual.sku.toLowerCase())).map(p => (
@@ -1087,7 +855,24 @@
                                             <input type="number" value={itemActual.cantidad} onChange={e=>setItemActual({...itemActual, cantidad:e.target.value})} placeholder="Cantidad" className="bg-black/60 p-3 rounded-xl text-xs border border-white/5 font-black text-white" />
                                             <input type="number" value={itemActual.valorUnitario} onChange={e=>setItemActual({...itemActual, valorUnitario:e.target.value})} placeholder="VALOR EQUIVALENTE $" className="bg-black/60 p-3 rounded-xl text-xs text-cyber-green font-black border border-white/5 outline-none focus:border-white placeholder:text-cyber-green/30 placeholder:drop-shadow-md shadow-inner" />
                                         </div>
-                                        <button type="button" onClick={()=>{ if(!itemActual.productoId || !itemActual.cantidad) return; setCarrito([...carrito, { ...itemActual, idT: Date.now(), subtotal: parseFloat(itemActual.cantidad) * itemActual.fraccion * parseFloat(itemActual.valorUnitario) }]); setItemActual({sku:'', nombre:'', productoId:'', cantidad:1, valorUnitario:0, fraccion: 1}); }} className="w-full py-3 bg-space-purple/10 text-space-purple border border-space-purple/30 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-md">AGREGAR A COMPRA</button>
+
+                                        {/* MODIFICACIÓN: Interruptor por Producto (Solo para HADES) */}
+                                        {datosVenta.canal === 'Hades' && (
+                                            <div className="flex justify-between items-center p-2 bg-black/40 rounded-xl border border-hades-gold/20 shadow-inner mt-2 animate-in fade-in">
+                                                <span className="text-[9px] font-black uppercase text-hades-gold italic">
+                                                    ¿Descontar de Bodega Ferco?
+                                                </span>
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => setItemActual({...itemActual, descontarStock: !itemActual.descontarStock})} 
+                                                    className={`w-9 h-4 rounded-full relative transition-all shadow-md ${itemActual.descontarStock !== false ? 'bg-hades-gold' : 'bg-slate-800'}`}
+                                                >
+                                                    <div className={`absolute top-0.5 w-3 h-3 bg-black rounded-full transition-all ${itemActual.descontarStock !== false ? 'right-0.5' : 'left-0.5'}`}></div>
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        <button type="button" onClick={()=>{ if(!itemActual.productoId || !itemActual.cantidad) return; setCarrito([...carrito, { ...itemActual, idT: Date.now(), subtotal: parseFloat(itemActual.cantidad) * itemActual.fraccion * parseFloat(itemActual.valorUnitario) }]); setItemActual({sku:'', nombre:'', productoId:'', cantidad:1, valorUnitario:0, fraccion: 1, descontarStock: true}); }} className="w-full py-3 bg-space-purple/10 text-space-purple border border-space-purple/30 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-md">AGREGAR A COMPRA</button>
                                     </div>
 
                                     {datosVenta.canal === 'Hades' && carrito.length > 0 && (
@@ -1103,7 +888,15 @@
                                                 <tbody>
                                                     {carrito.map(it => (
                                                         <tr key={it.idT} className="border-b border-white/5">
-                                                            <td className="py-2 truncate max-w-[120px]">{it.nombre}</td>
+                                                            <td className="py-2 truncate max-w-[120px]">
+                                                                {it.nombre}
+                                                                {/* MODIFICACIÓN: Tag visual para entender qué productos descuentan y cuáles no */}
+                                                                {datosVenta.canal === 'Hades' && (
+                                                                    <span className={`ml-2 px-1 py-0.5 rounded text-[6px] ${it.descontarStock !== false ? 'bg-cyber-green/20 text-cyber-green border border-cyber-green/30' : 'bg-space-orange/20 text-space-orange border border-space-orange/30'}`}>
+                                                                        {it.descontarStock !== false ? 'FERCO' : 'EXT'}
+                                                                    </span>
+                                                                )}
+                                                            </td>
                                                             <td className="text-center">{it.cantidad * it.fraccion} Uni</td>
                                                             <td className="text-right text-cyber-green font-mono">${(it.subtotal || 0).toLocaleString()}</td>
                                                             <td className="text-right"><button type="button" onClick={()=>setCarrito(carrito.filter(x=>x.idT!==it.idT))} className="text-red-500 pl-3">x</button></td>
@@ -1133,7 +926,7 @@
                                     <div className="p-4 bg-black/30 rounded-2xl border border-white/5 space-y-3">
                                         <p className="text-[8px] font-black uppercase text-space-purple tracking-widest italic">Cuenta de Ingreso:</p>
                                         <div className="grid grid-cols-2 gap-2">
-                                            {['CRIS', 'JHON', 'HADES'].map(cta => (<button key={cta} type="button" onClick={() => setDatosVenta({...datosVenta, cuentaDestino: cta})} className={`py-2 rounded-lg text-[9px] font-black border transition-all ${datosVenta.cuentaDestino === cta ? 'bg-cyber-green text-black border-cyber-green shadow-md' : 'border-white/5 text-slate-500'}`}>{cta}</button>))}
+                                            {['CRIS', 'JHION'].map(cta => (<button key={cta} type="button" onClick={() => setDatosVenta({...datosVenta, cuentaDestino: cta})} className={`py-2 rounded-lg text-[9px] font-black border transition-all ${datosVenta.cuentaDestino === cta ? 'bg-cyber-green text-black border-cyber-green shadow-md' : 'border-white/5 text-slate-500'}`}>{cta}</button>))}
                                         </div>
                                     </div>
 
@@ -1188,24 +981,15 @@
                                             <tbody className="divide-y divide-white/5">
                                                 {decryptedVentas.map(v => {
                                                     const tienePendiente = v.estado !== 'Pagado' && (v.pagos && v.pagos.some(p => ['Crédito', 'Cruce', 'Artículo en Garantía'].includes(p.metodo)));
-                                                    
                                                     return (
                                                         <tr key={v.id} className="hover:bg-white/5 transition-all border-l-4 border-l-transparent hover:border-l-space-purple">
                                                             <td className="p-5 opacity-40 uppercase font-black text-[8px] leading-tight">
-                                                                {v.hora}<br/>{v.fecha}<br/>
-                                                                <span className="text-space-orange font-bold">{v.canal}</span><br/>
-                                                                <span className="text-[#39ff14] font-black">CTA: {v.cuentaDestino || 'CRIS'}</span><br/>
-                                                                <span className="text-space-purple font-extrabold block mt-1 truncate max-w-[100px]" title={v.responsable}>
-                                                                    OP: {v.responsable ? v.responsable.split('@')[0] : 'Admin'}
-                                                                </span>
+                                                                {v.hora}<br/>{v.fecha}<br/><span className="text-space-orange font-bold">{v.canal}</span><br/><span className="text-[#39ff14] font-black">CTA: {v.cuentaDestino || 'CRIS'}</span><br/><span className="text-space-purple font-extrabold block mt-1 truncate max-w-[100px]" title={v.responsable}>OP: {v.responsable ? v.responsable.split('@')[0] : 'Admin'}</span>
                                                             </td>
                                                             <td className="p-5 font-black uppercase truncate max-w-[140px]">{v.nombreEntidad}</td>
                                                             <td className="p-5 text-center font-black text-cyber-green italic text-sm">${(v.totalVenta || 0).toLocaleString()}</td>
                                                             <td className="p-5 text-right flex justify-end gap-2 items-center">
-                                                                {tienePendiente && (
-                                                                    <button onClick={() => setSaldarModal({ show: true, venta: v, nuevoMetodo: 'Efectivo', montoEfectivo: v.totalVenta || 0, fechaEfectiva: new Date().toISOString().split('T')[0], observacionCierre: 'Abono Realizado' })} className="px-2 py-1 bg-hades-gold/20 text-hades-gold border border-hades-gold/30 rounded text-[7px] font-black uppercase hover:bg-hades-gold hover:text-black transition-all">Saldar</button>
-                                                                )}
-                                                                
+                                                                {tienePendiente && (<button onClick={() => setSaldarModal({ show: true, venta: v, nuevoMetodo: 'Efectivo', montoEfectivo: v.totalVenta || 0, fechaEfectiva: new Date().toISOString().split('T')[0], observacionCierre: 'Abono Realizado' })} className="px-2 py-1 bg-hades-gold/20 text-hades-gold border border-hades-gold/30 rounded text-[7px] font-black uppercase hover:bg-hades-gold hover:text-black transition-all">Saldar</button>)}
                                                                 <button onClick={() => iniciarEdicionDespacho(v)} className="text-blue-400 hover:text-blue-300 hover:scale-125 transition-all p-1" title="Modificar Despacho"><i data-lucide="edit-3" className="w-3.5 h-3.5"></i></button>
                                                                 <button onClick={async ()=>{ if(confirm('¿Anular?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', v.id)); }} className="text-red-500 hover:scale-125 transition-transform p-1"><i data-lucide="trash-2" className="w-3.5 h-3.5"></i></button>
                                                             </td>
