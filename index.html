@@ -845,13 +845,28 @@
                 if (type === 'INVENTARIO') {
                     if (inventarioActualizado.length > 0) {
                         data = inventarioActualizado.map(p => ({
-                            SKU: p.sku, Nombre: p.nombre, Categoria: p.categoria, Costo: p.precioCosto,
-                            Precio_Cliente: p.precioCliente, Precio_Socio: p.precioSocio, Stock: p.stockActual
-                        }));
-                    } else {
-                        data = [{ SKU: "NASA-001", Nombre: "ACETAMINOFEN", Categoria: "Producto Final", Costo: 1000, Precio_Cliente: 1500, Precio_Socio: 1200, Stock: 50 }];
-                    }
+                            ID: p.id, // <-- CRÍTICO: Identificador único de Firebase
+                            SKU: p.sku, 
+                            Nombre: p.nombre, 
+                            Categoria: p.categoria, 
+                            Costo: p.precioCosto,
+                            Precio_Cliente: p.precioCliente, 
+                            Precio_Socio: p.precioSocio, 
+                            Stock: p.stockActual
+                        }));    
+                 } else {
+                     data = [{
+                         ID: "",
+                         SKU: "NASA-001", 
+                         Nombre: "ACETAMINOFEN",
+                         Categoria: "Producto Final",
+                         Costo: 1000,
+                         Precio_Cliente: 1500,
+                         Precio_Socio: 1200,
+                         Stock: 50
+                    }];
                 }
+            }
                 if (type === 'SUJETOS') {
                     if (decryptedSujetos.length > 0) {
                         data = decryptedSujetos.map(s => ({ Nombre: s.nombre, Tipo: s.tipo, Telefono: s.telefono }));
