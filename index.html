@@ -1,790 +1,1098 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ferco Farma — Domiciliarios</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap');
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FERCO FARMA | REGISTROS DE BODEGA v21.0</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
 
-:root {
---c-bg: #0b0914; 
---c-surface: #151226; 
---c-surface2: #221d3b; 
---c-border: #352b57;
---c-border2: #4a3b7a;
---c-text: #f4f0ff;
---c-muted: #9b8ec2;
---c-accent: #ff9d00; 
---c-accent-dim: #3a2505;
---c-green: #3ecf8e; 
---c-green-dim: #0d2e1f;
---c-red: #ff5a5a; 
---c-red-dim: #2e0d0d;
---c-blue: #8a2be2; 
---c-blue-dim: #1a082e;
---c-info: #8b8ff5;
---c-info-dim: #1a1a3a;
---radius-sm: 6px;
---radius-md: 10px;
---radius-lg: 16px;
---font-ui: 'Syne', sans-serif;
---font-mono: 'DM Mono', monospace;
-}
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-apexcharts@1.4.1/dist/react-apexcharts.iife.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 
-body {
-background: var(--c-bg);
-color: var(--c-text);
-font-family: var(--font-ui);
-min-height: 100vh;
-padding: 0;
-overflow-x: hidden;
-position: relative;
-z-index: 0; 
-}
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'space-purple': '#9333ea',
+                        'space-orange': '#f97316',
+                        'space-bg': '#020206',
+                        'cyber-green': '#39ff14',
+                        'hades-gold': '#ffd700'
+                    }
+                }
+            }
+        }
+    </script>
 
-body::before {
-content: "";
-position: fixed;
-top: 0;
-left: 0;
-width: 100vw;
-height: 100vh;
-background-image: url('logo.jpg'); 
-background-size: cover; 
-background-position: center; 
-background-repeat: no-repeat;
-opacity: 0.25; 
-z-index: -1; 
-pointer-events: none; 
-}
+    <style type="text/css">
+        body { background-color: #020206; color: white; margin: 0; font-family: 'Inter', sans-serif; overflow-x: hidden; }
+        #bg-nasa { z-index: 0; position: fixed; inset: 0; overflow: hidden; pointer-events: none; }
+        #root { z-index: 10; position: relative; min-height: 100vh; }
 
-.app-shell { max-width: 680px; margin: 0 auto; padding: 24px 16px 80px; }
+        .glass-panel { 
+            background: rgba(10, 10, 18, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 1rem;
+            backdrop-filter: blur(40px);
+        }
 
-.app-header {
-display: flex;
-align-items: center;
-justify-content: space-between;
-margin-bottom: 32px;
-padding-bottom: 16px;
-border-bottom: 1px solid var(--c-border);
-}
+        .btn-primary-nasa {
+            width: 100%;
+            background: linear-gradient(135deg, #9333ea 0%, #f97316 100%);
+            color: white;
+            font-weight: 900;
+            padding: 1.25rem;
+            border-radius: 0.75rem;
+            text-transform: uppercase;
+            font-style: italic;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 0 25px rgba(147, 51, 234, 0.3);
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .btn-primary-nasa:hover { transform: translateY(-2px); box-shadow: 0 0 40px rgba(249, 115, 22, 0.5); border-color: white; }
 
-.app-logo { font-size: 18px; font-weight: 800; letter-spacing: -0.5px; color: var(--c-accent); }
-.app-logo span { color: var(--c-muted); font-weight: 400; }
+        .scanline {
+            position: fixed; inset: 0; pointer-events: none; opacity: 0.015; z-index: 50;
+            background: linear-gradient(to bottom, transparent 0%, #9333ea 50%, transparent 100%);
+            animation: scan 12s linear infinite;
+        }
+        @keyframes scan { 0% { transform: translateY(-100%); } 100% { transform: translateY(100%); } }
+        
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #020206; }
+        ::-webkit-scrollbar-thumb { background: #9333ea; border-radius: 10px; }
 
-.clock-display { font-family: var(--font-mono); font-size: 13px; color: var(--c-muted); background: var(--c-surface); padding: 6px 12px; border-radius: var(--radius-sm); border: 1px solid var(--c-border); }
-
-.card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--radius-lg); padding: 24px; margin-bottom: 16px; }
-.card-title { font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--c-muted); margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
-
-.stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
-.stat-card { background: var(--c-surface2); border: 1px solid var(--c-border); border-radius: var(--radius-md); padding: 14px 16px; text-align: center; }
-.stat-value { font-size: 26px; font-weight: 800; font-family: var(--font-mono); color: var(--c-text); line-height: 1; margin-bottom: 4px; }
-.stat-label { font-size: 11px; color: var(--c-muted); font-weight: 600; letter-spacing: 0.5px; }
-
-.stat-card.accent .stat-value { color: var(--c-accent); }
-.stat-card.green .stat-value { color: var(--c-green); }
-.stat-card.blue .stat-value { color: var(--c-blue); }
-
-.turno-meta { display: flex; align-items: center; gap: 12px; background: var(--c-green-dim); border: 1px solid var(--c-green); border-radius: var(--radius-md); padding: 12px 16px; margin-bottom: 20px; }
-.turno-meta .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c-green); box-shadow: 0 0 8px var(--c-green); flex-shrink: 0; animation: pulse 2s infinite; }
-@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-.turno-meta .meta-text { font-size: 13px; color: var(--c-green); font-family: var(--font-mono); }
-
-.form-group { margin-bottom: 16px; }
-.form-label { display: block; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; color: var(--c-muted); margin-bottom: 8px; text-transform: uppercase; }
-.form-input { width: 100%; background: var(--c-surface2); border: 1px solid var(--c-border); border-radius: var(--radius-md); padding: 12px 14px; font-size: 15px; font-family: var(--font-ui); color: var(--c-text); outline: none; transition: border-color 0.15s; }
-.form-input:focus { border-color: var(--c-accent); background: var(--c-surface); }
-
-.radio-group { display: flex; gap: 8px; }
-.radio-option { flex: 1; position: relative; }
-.radio-option input[type="radio"] { position: absolute; opacity: 0; width: 0; height: 0; }
-.radio-option label { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; background: var(--c-surface2); border: 1px solid var(--c-border); border-radius: var(--radius-md); font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s; color: var(--c-muted); user-select: none; }
-.radio-option input[type="radio"]:checked + label { border-color: var(--c-accent); background: var(--c-accent-dim); color: var(--c-accent); }
-.radio-option.green input[type="radio"]:checked + label { border-color: var(--c-green); background: var(--c-green-dim); color: var(--c-green); }
-.radio-option.red input[type="radio"]:checked + label { border-color: var(--c-red); background: var(--c-red-dim); color: var(--c-red); }
-
-.checkbox-group { display: flex; flex-direction: column; gap: 10px; background: var(--c-surface2); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--c-border); }
-.checkbox-option { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--c-text); user-select: none; }
-.checkbox-option input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--c-accent); cursor: pointer; }
-
-.pagos-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-top: 16px; }
-.pago-item { display: none; flex-direction: column; gap: 4px; background: rgba(255,255,255,0.02); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--c-border); animation: slideDown 0.2s ease; }
-.pago-item.visible { display: flex; }
-@keyframes slideDown { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
-
-.pago-item label { display: block; font-size: 11px; font-weight: 700; color: var(--c-accent); text-transform: uppercase; margin-bottom: 4px; }
-.pago-subinput { margin-top: 6px; font-size: 12px; padding: 10px 12px; }
-.total-pagos-resumen { margin-top: 16px; text-align: right; font-size: 13px; color: var(--c-muted); background: var(--c-surface2); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--c-border); }
-.total-pagos-resumen strong { color: var(--c-green); font-family: var(--font-mono); font-size: 18px; margin-left: 8px; }
-
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 13px 20px; border-radius: var(--radius-md); font-family: var(--font-ui); font-size: 14px; font-weight: 700; cursor: pointer; border: none; transition: all 0.15s; letter-spacing: 0.3px; width: 100%; }
-.btn-primary { background: var(--c-accent); color: #0d0f12; }
-.btn-success { background: var(--c-green-dim); color: var(--c-green); border: 1px solid var(--c-green); }
-.btn-danger { background: var(--c-red-dim); color: var(--c-red); border: 1px solid var(--c-red); }
-.btn-ghost { background: transparent; color: var(--c-muted); border: 1px solid var(--c-border); }
-.btn-small { padding: 6px 12px; font-size: 11px; width: auto; border-radius: var(--radius-sm); }
-.btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.btn:disabled { opacity: 0.3; cursor: not-allowed; filter: grayscale(100%); }
-
-.pedidos-list { display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto; }
-.pedido-item { display: flex; align-items: center; gap: 12px; background: var(--c-surface2); border: 1px solid var(--c-border); border-radius: var(--radius-md); padding: 12px 14px; animation: slideIn 0.2s ease; }
-@keyframes slideIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
-.pedido-num { font-family: var(--font-mono); font-size: 12px; color: var(--c-muted); min-width: 24px; }
-.pedido-info { flex: 1; min-width: 0; }
-.pedido-cliente { font-size: 14px; font-weight: 700; color: var(--c-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pedido-hora { font-size: 11px; font-family: var(--font-mono); color: var(--c-muted); display: flex; align-items: center; gap: 6px; }
-.pedido-badges { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; max-width: 200px; }
-.badge { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px; white-space: nowrap; }
-.badge-pago { background: var(--c-green-dim); color: var(--c-green); border: 1px solid #1a4d34; }
-.badge-no-pago { background: var(--c-red-dim); color: var(--c-red); border: 1px solid #4d1a1a; }
-.badge-medio { background: var(--c-info-dim); color: var(--c-info); border: 1px solid #28286a; }
-.badge-delete { background: transparent; border: none; color: var(--c-muted); cursor: pointer; font-size: 16px; }
-
-.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 1000; align-items: center; justify-content: center; padding: 16px; }
-.modal-overlay.active { display: flex; }
-.modal-box { background: var(--c-surface); border: 1px solid var(--c-border2); border-radius: var(--radius-lg); padding: 28px; max-width: 420px; width: 100%; animation: modalIn 0.2s ease; }
-@keyframes modalIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-.modal-title { font-size: 18px; font-weight: 800; margin-bottom: 8px; color: var(--c-text); }
-.modal-desc { font-size: 14px; color: var(--c-muted); margin-bottom: 24px; line-height: 1.6; }
-
-.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--c-surface2); border: 1px solid var(--c-border2); border-radius: var(--radius-md); padding: 12px 20px; font-size: 14px; font-weight: 600; color: var(--c-text); z-index: 2000; transition: 0.3s; pointer-events: none; }
-.toast.show { transform: translateX(-50%) translateY(0); }
-.toast.success { border-color: var(--c-green); color: var(--c-green); }
-.toast.error { border-color: var(--c-red); color: var(--c-red); }
-
-.welcome-hero { text-align: center; padding: 40px 0 32px; }
-.welcome-hero h1 { font-size: 36px; font-weight: 800; color: var(--c-text); line-height: 1.1; }
-.welcome-hero h1 span { color: var(--c-accent); }
-.welcome-hero p { font-size: 15px; color: var(--c-muted); margin-top: 8px; }
-
-.collapsible { overflow: hidden; transition: max-height 0.3s ease, opacity 0.3s ease; max-height: 0; opacity: 0; }
-.collapsible.open { max-height: 1200px; opacity: 1; }
-</style>
+        .selectable-list { max-height: 200px; overflow-y: auto; border-radius: 0.75rem; background: rgba(0,0,0,0.9); border: 1px solid rgba(255,255,255,0.1); margin-top: 4px; position: absolute; width: 100%; z-index: 100; backdrop-filter: blur(10px); }
+        .selectable-item { padding: 12px; font-size: 11px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s; text-transform: uppercase; font-weight: bold; color: white; }
+        .selectable-item:hover { background: rgba(147, 51, 234, 0.4); color: #39ff14; }
+        
+        .hades-card { background: repeating-linear-gradient(45deg, #000, #000 10px, #1a1a24 10px, #1a1a24 20px); border: 1px solid #ffd70033; }
+        .table-container { scrollbar-width: thin; scrollbar-color: #9333ea transparent; }
+    </style>
 </head>
 <body>
-
-<div class="app-shell">
-<header class="app-header">
-<div class="app-logo">Ferco<span>Farma</span></div>
-<div class="clock-display" id="live-clock">--:--:--</div>
-</header>
-<div id="app-root"></div>
-</div>
-
-<!-- Modal Caja Menor -->
-<div class="modal-overlay" id="modal-caja">
-<div class="modal-box">
-<div class="modal-title">Movimiento de Caja</div>
-<div class="modal-desc">Registra gastos operativos o ingresos de base en efectivo.</div>
-<div class="form-group">
-    <label class="form-label">Tipo de Movimiento</label>
-    <div class="radio-group">
-        <div class="radio-option green">
-            <input type="radio" name="tipo-caja" id="caja-ingreso" value="Ingreso">
-            <label for="caja-ingreso">Ingreso (Base)</label>
-        </div>
-        <div class="radio-option red">
-            <input type="radio" name="tipo-caja" id="caja-egreso" value="Egreso" checked>
-            <label for="caja-egreso">Egreso (Gasto)</label>
-        </div>
+    <div id="bg-nasa">
+        <img src="logo.jpg" alt="Logo" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.07; filter: blur(2px) brightness(0.3);" onerror="this.style.display='none';" />
+        <div style="position: absolute; inset: 0; background: radial-gradient(circle at center, transparent 0%, #020206 90%);"></div>
+        <div class="scanline"></div>
     </div>
-</div>
-<div class="form-group">
-    <label class="form-label">Concepto</label>
-    <input class="form-input" id="caja-concepto" placeholder="Ej. Gasolina, Peaje, Base...">
-</div>
-<div class="form-group">
-    <label class="form-label">Valor ($)</label>
-    <input class="form-input" type="number" id="caja-valor" placeholder="Monto en efectivo">
-</div>
-<div class="btn-row">
-<button class="btn btn-ghost" id="btn-cancelar-caja">Cancelar</button>
-<button class="btn btn-primary" id="btn-guardar-caja">Guardar</button>
-</div>
-</div>
-</div>
+    <div id="root"></div>
 
-<div class="modal-overlay" id="modal-fin">
-<div class="modal-box">
-<div class="modal-title">¿Finalizar turno?</div>
-<div class="modal-desc">El turno se cerrará y los datos locales se borrarán.<br><br><strong>Todos los registros ya están en Firebase.</strong></div>
-<div class="btn-row">
-<button class="btn btn-ghost" id="btn-cancelar-modal">Cancelar</button>
-<button class="btn btn-danger" id="btn-confirmar-modal">Finalizar turno</button>
-</div>
-</div>
-</div>
+    <script type="text/babel" data-type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, query, updateDoc, writeBatch, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-<div class="modal-overlay" id="modal-eliminar">
-<div class="modal-box">
-<div class="modal-title">¿Eliminar registro?</div>
-<div class="modal-desc">Esta acción removerá el pedido tanto de forma local como de la base de datos central en la nube.</div>
-<div class="btn-row">
-<button class="btn btn-ghost" id="btn-cancelar-eliminar">Cancelar</button>
-<button class="btn btn-danger" id="btn-confirmar-eliminar">Eliminar</button>
-</div>
-</div>
-</div>
+        const firebaseConfig = {
+            apiKey: "AIzaSyB8Ei-GTiqedjsFy09XVujGb94mzkBmVOU",
+            authDomain: "ferco-farma.firebaseapp.com",
+            projectId: "ferco-farma",
+            storageBucket: "ferco-farma.firebasestorage.app",
+            messagingSenderId: "974529589553",
+            appId: "1:974529589553:web:a2944444e7689dec514010"
+        };
 
-<div class="toast" id="toast"></div>
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = "ferco-farma-wms";
 
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
-import { getFirestore, doc, setDoc, deleteDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+        const { useState, useEffect, useMemo, useRef } = React;
+        const ReactApexChart = window.ReactApexCharts ? (window.ReactApexCharts.default || window.ReactApexCharts) : null;
 
-const firebaseConfig = typeof __firebase_config !== 'undefined' 
-? JSON.parse(__firebase_config) 
-: {
-apiKey: "AIzaSyB8Ei-GTiqedjsFy09XVujGb94mzkBmVOU",
-authDomain: "ferco-farma.firebaseapp.com",
-projectId: "ferco-farma",
-storageBucket: "ferco-farma.firebasestorage.app",
-messagingSenderId: "974529589553",
-appId: "1:974529589553:web:6ed8abcdb6eec366514010"
-};
+        const encryptVal = (val, key) => {
+            if (val === undefined || val === null || val === '') return '';
+            return CryptoJS.AES.encrypt(String(val), key).toString();
+        };
 
-const sysAppId = typeof __app_id !== 'undefined' ? __app_id : 'ferco-farma-tracker';
-let firebaseUser = null;
-let trackingInterval = null;
-let db = null;
-let auth = null;
-let pedidoAEliminar = null;
-let equipoDinamico = [];
+        const decryptVal = (cipher, key, isNumeric = false) => {
+            if (cipher === undefined || cipher === null || cipher === '') return isNumeric ? 0 : '';
+            if (!key) return isNumeric ? (parseFloat(cipher) || 0) : String(cipher);
+            try {
+                if (typeof cipher !== 'string') return isNumeric ? (parseFloat(cipher) || 0) : cipher;
+                const bytes = CryptoJS.AES.decrypt(cipher, key);
+                const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+                if (decrypted !== '') return isNumeric ? (parseFloat(decrypted) || 0) : decrypted;
+            } catch (e) {}
+            return isNumeric ? (parseFloat(cipher) || 0) : String(cipher);
+        };
 
-const app = initializeApp(firebaseConfig);
-db = getFirestore(app);
-auth = getAuth(app);
+        const normalizarCategoria = (cat) => {
+            if (!cat) return 'Producto Final';
+            const clean = cat.trim().toLowerCase();
+            if (clean.includes('final')) return 'Producto Final';
+            if (clean.includes('insumo')) return 'Insumo';
+            if (clean.includes('empaque')) return 'Empaque';
+            return 'Producto Final';
+        };
 
-async function conectarFirebase(retries = 5, delay = 1000) {
-try {
-await signInAnonymously(auth);
-} catch (err) {
-if (retries > 0) {
-setTimeout(() => conectarFirebase(retries - 1, delay * 2), delay);
-} else {
-mostrarToast("Fallo crítico al conectar con la nube", "error");
-}
-}
-}
-conectarFirebase();
+        const App = () => {
+            const [user, setUser] = useState(null);
+            const [productos, setProductos] = useState([]);
+            const [ventas, setVentas] = useState([]);
+            const [sujetos, setSujetos] = useState([]);
+            const [view, setView] = useState('dashboard');
+            const [loading, setLoading] = useState(true);
+            const [isSyncing, setIsSyncing] = useState(false);
+            
+            const [vaultKey, setVaultKey] = useState('');
+            const [isVaultLocked, setIsVaultLocked] = useState(true);
+            const [vaultAuthDoc, setVaultAuthDoc] = useState(null);
+            
+            const [loginEmail, setLoginEmail] = useState('');
+            const [loginPassword, setLoginPassword] = useState('');
+            const [inputKey, setInputKey] = useState('');
+            const [vaultError, setVaultError] = useState('');
 
-onAuthStateChanged(auth, async user => { 
-firebaseUser = user; 
-if (user) {
-    sincronizarPendientes();
-    await descargarEquipoActivo();
-}
-});
+            const [notificacion, setNotificacion] = useState({ show: false, mensaje: '', tipo: 'success' });
 
-async function descargarEquipoActivo() {
-    try {
-        const docRef = doc(db, 'artifacts', sysAppId, 'public', 'data', 'equipo_config');
-        const docSnap = await getDoc(docRef);
-        
-        if (docSnap.exists()) {
-            equipoDinamico = docSnap.data().miembros || [];
-        } else {
-            equipoDinamico = ["Valentino Rossi", "Mono", "Cris", "JF", "Pipe", "Havith"];
-        }
-    } catch (e) {
-        console.warn("Aviso de red: Usando lista de respaldo local.", e);
-        equipoDinamico = ["Valentino Rossi", "Mono", "Cris", "JF", "Pipe", "Havith"];
-    } finally {
-        const selector = document.getElementById('input-nombre');
-        if (selector) {
-            selector.innerHTML = '<option value="" disabled selected>Seleccionaté vé!</option>';
-            equipoDinamico.forEach(nombre => {
-                selector.innerHTML += `<option value="${nombre}">${nombre}</option>`;
+            const fileInvRef = useRef(null);
+            const fileDespRef = useRef(null);
+            const fileSujRef = useRef(null);
+
+            const [editingVentaId, setEditingVentaId] = useState(null);
+            const [oldItems, setOldItems] = useState([]); 
+            const [carrito, setCarrito] = useState([]);
+            const [pagos, setPagos] = useState([]);
+            const [itemActual, setItemActual] = useState({ productoId: '', sku: '', nombre: '', cantidad: 1, valorUnitario: 0, fraccion: 1, descontarStock: true });
+            const [metodoActual, setMetodoActual] = useState({ metodo: 'Efectivo', monto: '', fechaPago: '', comentario: '' });
+            const [datosVenta, setDatosVenta] = useState({ 
+                entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, domiciliarioAsignado: 'Pipe', 
+                valorDomicilio: 0, canal: 'Ferco Farma', aplicarDescuento: false, valorDescuento: 0, 
+                cuentaDestino: 'CRIS'
             });
-        }
-    }
-}
 
-function obtenerUbicacionGPS(callback) {
-if (!("geolocation" in navigator)) return callback(null, null);
-const opcionesHigh = { enableHighAccuracy: true, timeout: 6000, maximumAge: 60000 };
-const opcionesLow = { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 };
+            const [showProductList, setShowProductList] = useState(false);
+            const [showSubjectList, setShowSubjectList] = useState(false);
 
-navigator.geolocation.getCurrentPosition(
-(pos) => callback(pos.coords.latitude, pos.coords.longitude),
-(err) => {
-navigator.geolocation.getCurrentPosition(
-(pos2) => callback(pos2.coords.latitude, pos2.coords.longitude),
-() => callback(null, null), opcionesLow
-);
-}, opcionesHigh
-);
-}
+            const [saldarModal, setSaldarModal] = useState({
+                show: false, venta: null, nuevoMetodo: 'Efectivo', montoEfectivo: '', fechaEfectiva: '', observacionCierre: ''
+            });
 
-function iniciarRastreoSilencioso(nombreDomi) {
-if (!("geolocation" in navigator)) return;
-if (trackingInterval) clearInterval(trackingInterval);
+            const [newProduct, setNewProduct] = useState({ id: null, sku: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
+            const [newSujeto, setNewSujeto] = useState({ id: null, nombre: '', tipo: 'Cliente', telefono: '' });
 
-const realizarRastreo = () => {
-obtenerUbicacionGPS(async (lat, lng) => {
-if (lat && lng && firebaseUser) {
-const coords = { lat, lng, timestamp: new Date().toISOString(), domiciliario: nombreDomi };
-const idRastreo = `gps_${nombreDomi.replace(/\s+/g, '_')}_${Date.now()}`;
-try { await setDoc(doc(db, 'artifacts', sysAppId, 'public', 'data', 'rastreo_en_vivo', idRastreo), coords); } catch (e) {}
-}
-});
-};
-realizarRastreo();
-trackingInterval = setInterval(realizarRastreo, 300000);
-}
+            // --- CORRECCIÓN: Actualización de la lista de domiciliarios ---
+            const staffDomi = ['Pipe', 'Havith', 'Valentino Rossi', 'Mono', 'Cris', 'JF', 'Delivery App'];
 
-async function syncPedidoToFirebase(pedido, domiciliario) {
-if (!firebaseUser) return;
-try {
-const payload = { ...pedido, domiciliario, creadoPor: firebaseUser.uid, synced: true };
-await setDoc(doc(db, 'artifacts', sysAppId, 'public', 'data', 'entregas_domicilios', pedido.id), payload);
-marcarPedidoComoSincronizadoLocal(pedido.id);
-} catch (error) { }
-}
+            useEffect(() => {
+                const unsubscribe = onAuthStateChanged(auth, (u) => {
+                    setUser(u);
+                    if (u) {
+                        setLoading(false);
+                    } else {
+                        setIsVaultLocked(true);
+                        setVaultKey('');
+                        setLoading(false);
+                    }
+                });
+                return () => unsubscribe();
+            }, []);
 
-async function syncMovCajaToFirebase(mov, domiciliario) {
-if (!firebaseUser) return;
-try {
-const payload = { ...mov, domiciliario, creadoPor: firebaseUser.uid, synced: true };
-await setDoc(doc(db, 'artifacts', sysAppId, 'public', 'data', 'movimientos_caja', mov.id), payload);
-marcarMovCajaComoSincronizadoLocal(mov.id);
-} catch (error) { }
-}
+            useEffect(() => {
+                if (!user) return;
+                const unsubProd = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), (s) => setProductos(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+                const unsubVentas = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), (s) => setVentas(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+                const unsubSujetos = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), (s) => setSujetos(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+                const unsubVaultAuth = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'vault_control'), (snap) => {
+                    const docAuth = snap.docs.find(d => d.id === 'auth');
+                    if (docAuth) setVaultAuthDoc({ id: docAuth.id, ...docAuth.data() });
+                    else setVaultAuthDoc(null);
+                });
+                return () => { unsubProd(); unsubVentas(); unsubSujetos(); unsubVaultAuth(); };
+            }, [user]);
 
-function marcarPedidoComoSincronizadoLocal(id) {
-const estado = leerEstado();
-if (estado && estado.pedidos) {
-const index = estado.pedidos.findIndex(p => p.id === id);
-if (index !== -1) {
-estado.pedidos[index].synced = true;
-guardarEstado(estado);
-renderApp();
-}
-}
-}
+            const mostrarNotificacion = (mensaje, tipo = 'success') => {
+                setNotificacion({ show: true, mensaje, tipo });
+                setTimeout(() => setNotificacion({ show: false, mensaje: '', tipo: 'success' }), 4500);
+            };
 
-function marcarMovCajaComoSincronizadoLocal(id) {
-const estado = leerEstado();
-if (estado && estado.movimientosCaja) {
-const index = estado.movimientosCaja.findIndex(m => m.id === id);
-if (index !== -1) {
-estado.movimientosCaja[index].synced = true;
-guardarEstado(estado);
-renderApp();
-}
-}
-}
+            const decryptedProductos = useMemo(() => {
+                if (isVaultLocked || !vaultKey) return [];
+                return productos.map(p => {
+                    const catNorm = normalizarCategoria(p.categoria); 
+                    return {
+                        id: p.id, 
+                        sku: p.sku || 'SIN-SKU', 
+                        categoria: catNorm, 
+                        stockActual: p.stockActual !== undefined ? p.stockActual : 0, 
+                        stockInicial: p.stockInicial !== undefined ? p.stockInicial : 0,
+                        nombre: decryptVal(p.nombre, vaultKey) || 'PRODUCTO DESCONOCIDO',
+                        precioCosto: decryptVal(p.precioCosto, vaultKey, true),
+                        precioCliente: decryptVal(p.precioCliente, vaultKey, true),
+                        precioSocio: decryptVal(p.precioSocio, vaultKey, true)
+                    };
+                });
+            }, [productos, isVaultLocked, vaultKey]);
 
-async function sincronizarPendientes() {
-if (!firebaseUser) return;
-const estado = leerEstado();
-if (estado) {
-    if (estado.pedidos) {
-        const pendientes = estado.pedidos.filter(p => !p.synced);
-        for (const p of pendientes) { await syncPedidoToFirebase(p, estado.domiciliario); }
-    }
-    if (estado.movimientosCaja) {
-        const pendientesCaja = estado.movimientosCaja.filter(m => !m.synced);
-        for (const m of pendientesCaja) { await syncMovCajaToFirebase(m, estado.domiciliario); }
-    }
-}
-}
+            const decryptedVentas = useMemo(() => {
+                if (isVaultLocked || !vaultKey) return [];
+                return ventas.map(v => {
+                    let decItems = []; let decPagos = []; let decSplit = { ferco: 0, hades: 0 };
+                    if (v.items) {
+                        if (Array.isArray(v.items)) decItems = v.items;
+                        else {
+                            try { const str = decryptVal(v.items, vaultKey); if (str) decItems = JSON.parse(str); } 
+                            catch(e) { try { decItems = JSON.parse(v.items); } catch(err) {} }
+                        }
+                    }
+                    if (v.pagos) {
+                        if (Array.isArray(v.pagos)) decPagos = v.pagos;
+                        else {
+                            try { const str = decryptVal(v.pagos, vaultKey); if (str) decPagos = JSON.parse(str); } 
+                            catch(e) { try { decPagos = JSON.parse(v.pagos); } catch(err) {} }
+                        }
+                    }
+                    if (v.split) {
+                        if (typeof v.split === 'object' && !v.split.ciphertext) decSplit = v.split;
+                        else {
+                            try { const str = decryptVal(v.split, vaultKey); if (str) decSplit = JSON.parse(str); } 
+                            catch(e) { if (typeof v.split === 'object') decSplit = v.split; }
+                        }
+                    }
+                    return {
+                        id: v.id, entidad: v.entidad, canal: v.canal, estado: v.estado, cuentaDestino: v.cuentaDestino, timestamp: v.timestamp, fecha: v.fecha, hora: v.hora,
+                        nombreEntidad: decryptVal(v.nombreEntidad, vaultKey),
+                        responsable: decryptVal(v.responsable, vaultKey),
+                        totalVenta: decryptVal(v.totalVenta, vaultKey, true),
+                        items: decItems, pagos: decPagos, split: decSplit
+                    };
+                }).sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
+            }, [ventas, isVaultLocked, vaultKey]);
 
-async function eliminarPedidoFirebase(id) {
-if (!firebaseUser) return;
-try { await deleteDoc(doc(db, 'artifacts', sysAppId, 'public', 'data', 'entregas_domicilios', id)); } catch (error) {}
-}
+            const decryptedSujetos = useMemo(() => {
+                if (isVaultLocked || !vaultKey) return [];
+                return sujetos.map(s => ({
+                    id: s.id, tipo: s.tipo,
+                    nombre: decryptVal(s.nombre, vaultKey),
+                    telefono: decryptVal(s.telefono, vaultKey)
+                }));
+            }, [sujetos, isVaultLocked, vaultKey]);
 
-const STORAGE_KEY = 'turno_activo';
-function leerEstado() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch(e) { return null; } }
-function guardarEstado(estado) { localStorage.setItem(STORAGE_KEY, JSON.stringify(estado)); }
-function limpiarEstado() { 
-localStorage.removeItem(STORAGE_KEY); 
-if (trackingInterval) { clearInterval(trackingInterval); trackingInterval = null; }
-}
+            const inventarioActualizado = useMemo(() => {
+                return [...decryptedProductos].sort((a, b) => {
+                    const numA = parseInt(a.sku?.match(/\d+/)?.[0] || 0, 10);
+                    const numB = parseInt(b.sku?.match(/\d+/)?.[0] || 0, 10);
+                    if (numA !== numB) return numA - numB;
+                    return (a.sku || '').localeCompare(b.sku || '');
+                });
+            }, [decryptedProductos]);
 
-function actualizarReloj() {
-const clock = document.getElementById('live-clock');
-if (clock) clock.textContent = new Date().toLocaleTimeString('es-CO');
-}
-setInterval(actualizarReloj, 1000);
+            const getNextSKU = (tempProductosList) => {
+                const prefix = 'NASA-';
+                const listToScan = tempProductosList || inventarioActualizado;
+                const nums = listToScan.filter(p => p.sku?.startsWith(prefix)).map(p => { const m = p.sku.match(/\d+/); return m ? parseInt(m[0], 10) : 0; });
+                const maxNum = nums.length > 0 ? Math.max(...nums) : 0;
+                return `${prefix}${String(maxNum + 1).padStart(3, '0')}`;
+            };
 
-function mostrarToast(msg, tipo = 'default') {
-const t = document.getElementById('toast');
-t.textContent = msg; 
-t.className = `toast ${tipo} show`;
-setTimeout(() => { t.className = 'toast'; }, 2800);
-}
+            const totalOp = useMemo(() => {
+                const sub = carrito.reduce((s, i) => s + (parseFloat(i.cantidad) * i.fraccion * parseFloat(i.valorUnitario) || 0), 0);
+                const desc = (datosVenta.entidad === 'Cliente' && datosVenta.aplicarDescuento) ? (parseFloat(datosVenta.valorDescuento) || 0) : 0;
+                const dom = (datosVenta.entregaDomicilio) ? (parseFloat(datosVenta.valorDomicilio) || 0) : 0;
+                return Math.max(0, sub - desc) + dom;
+            }, [carrito, datosVenta]);
 
-function renderApp() {
-const estado = leerEstado();
-const root = document.getElementById('app-root');
-root.innerHTML = (!estado || !estado.iniciado) ? renderPantallaInicio() : renderPantallaActiva(estado);
-adjuntarEventosDinamicos(estado);
+            const totalAbonado = useMemo(() => pagos.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0), [pagos]);
 
-if ((!estado || !estado.iniciado) && equipoDinamico.length > 0) {
-    const selector = document.getElementById('input-nombre');
-    selector.innerHTML = '<option value="" disabled selected>Seleccionaté vé!</option>';
-    equipoDinamico.forEach(nombre => selector.innerHTML += `<option value="${nombre}">${nombre}</option>`);
-}
-}
+            const hadesSplit = useMemo(() => {
+                if (datosVenta.canal !== 'Hades' || carrito.length === 0) return { ferco: 0, hades: 0 };
+                let fercoShare = 0; let hadesShare = 0;
+                
+                carrito.forEach(it => {
+                    const p = inventarioActualizado.find(x => x.id === it.productoId);
+                    
+                    // precioSocio es el precio al que Ferco Farma le vende a Hades (ej. 18.000)
+                    const costoSocioTotal = (p?.precioSocio || 0) * parseFloat(it.cantidad) * it.fraccion;
+                    
+                    // valorUnitario es lo que el operador digitó que le cobró al cliente final (ej. 30.000)
+                    const ventaTotalHades = parseFloat(it.valorUnitario) * parseFloat(it.cantidad) * it.fraccion;
+                    
+                    if (it.descontarStock !== false) {
+                        // Ferco Farma recoge su costo de distribuidor (18.000)
+                        fercoShare += costoSocioTotal;
+                        // Hades se queda con el sobrante de la venta al cliente (30.000 - 18.000 = 12.000)
+                        hadesShare += (ventaTotalHades - costoSocioTotal);
+                    } else {
+                        // Si no sale de bodega, Hades se queda con todo
+                        hadesShare += ventaTotalHades;
+                    }
+                });
+                
+                const dom = datosVenta.entregaDomicilio ? (parseFloat(datosVenta.valorDomicilio) || 0) : 0;
+                return { ferco: fercoShare + dom, hades: hadesShare };
+            }, [carrito, datosVenta, inventarioActualizado]);
 
-function renderPantallaInicio() {
-return `
-       <div class="welcome-hero">
-           <h1>HEY!<br><span>Ready pa´ repartirlo?</span></h1>
-           <p>Inicia tu turno y registra tus pedidos.</p>
-       </div>
-       <div class="card">
-           <div class="card-title">¿Cual de nuestros domis eres?</div>
-           <div class="form-group">
-               <label class="form-label">Selecciona tu Name</label>
-               <select class="form-input" id="input-nombre">
-                   <option value="" disabled selected>Sincronizando con la nube...</option>
-               </select>
-           </div>
-           <button class="btn btn-primary" id="btn-iniciar-turno">A Repartirlo!!</button>
-       </div>`;
-}
+            const metrics = useMemo(() => {
+                const res = decryptedVentas.reduce((acc, v) => {
+                    const val = parseFloat(v.totalVenta) || 0;
+                    if (v.entidad === 'Cliente') acc.cli += val;
+                    else if (v.entidad === 'Distribuidor') acc.dist += val;
+                    else if (v.entidad === 'Proveedor') acc.prov += val;
+                    return acc;
+                }, { cli: 0, dist: 0, prov: 0 });
+                const valorBodega = inventarioActualizado.reduce((s,p) => s + ((parseFloat(p.stockActual) || 0) * (parseFloat(p.precioCosto) || 0)), 0);
+                return { ...res, valorBodega, bajos: inventarioActualizado.filter(p => p.stockActual < 10).length };
+            }, [decryptedVentas, inventarioActualizado]);
 
-function renderPantallaActiva(estado) {
-const pedidos = estado.pedidos || [];
-const movimientosCaja = estado.movimientosCaja || []; // Leemos la caja menor
+            const rankingClientes = useMemo(() => {
+                const stats = decryptedVentas.filter(v => v.entidad === 'Cliente' && v.nombreEntidad).reduce((acc, v) => {
+                    const id = v.nombreEntidad.toUpperCase();
+                    if (!acc[id]) acc[id] = { nombre: v.nombreEntidad, count: 0, total: 0 };
+                    acc[id].count += 1;
+                    acc[id].total += parseFloat(v.totalVenta) || 0;
+                    return acc;
+                }, {});
+                return Object.values(stats).sort((a,b) => b.total - a.total).slice(0, 5);
+            }, [decryptedVentas]);
 
-const items = [...pedidos].reverse().map((p, i) => {
-const idx = pedidos.length - i;
-const bMedios = p.pagosDesglosados ? p.pagosDesglosados.map(pd => {
-let metaInfo = '';
-let nombreMedio = pd.medio;
-if (pd.medio === 'Datáfono' && pd.codigoAprobacion) metaInfo = ` (${pd.codigoAprobacion})`;
-if (pd.medio === 'Producto en Garantía') { nombreMedio = 'Artículo/Cruce'; metaInfo = pd.notaGarantia ? ` (${pd.notaGarantia})` : ''; }
-return `<span class="badge badge-medio">${nombreMedio}: $${pd.valor}${metaInfo}</span>`;
-}).join('') : '';
+            useEffect(() => {
+                const term = itemActual.sku.trim().toUpperCase();
+                if (term.length > 1) {
+                    const p = inventarioActualizado.find(x => x.sku.toUpperCase() === term);
+                    if (p && !itemActual.productoId) {
+                        let v = 0;
+                        if (datosVenta.entidad === 'Proveedor') v = p.precioCosto || 0;
+                        else if (datosVenta.entidad === 'Distribuidor' || datosVenta.canal === 'Hades') v = p.precioSocio || 0;
+                        else v = p.precioCliente || 0;
+                        setItemActual(prev => ({ ...prev, productoId: p.id, nombre: p.nombre, valorUnitario: v }));
+                    }
+                }
+            }, [itemActual.sku, datosVenta.entidad, datosVenta.canal, inventarioActualizado]);
 
-const bPago = p.pago === 'si' ? `<span class="badge badge-pago">Total: $${p.valorPagado}</span>${bMedios}` : `<span class="badge badge-no-pago">Sin pago</span>`;
-const syncBadge = p.synced 
-? `<span style="color: var(--c-green); background: rgba(62,207,142,0.1); border: 1px solid rgba(62,207,142,0.2); font-size: 9px; padding: 1px 4px; border-radius: 4px;">Sincronizado</span>`
-: `<span style="color: var(--c-accent); background: rgba(240,192,64,0.1); border: 1px solid rgba(240,192,64,0.2); font-size: 9px; padding: 1px 4px; border-radius: 4px;">Pendiente Nube</span>`;
-const localTime = p.timestamp ? new Date(p.timestamp).toLocaleTimeString() : 'N/A';
+            useEffect(() => {
+                const skuTerm = newProduct.sku.trim().toUpperCase();
+                if (skuTerm.length > 0) {
+                    const p = inventarioActualizado.find(x => x.sku.toUpperCase() === skuTerm);
+                    if (p && (!newProduct.id || newProduct.id !== p.id)) {
+                        setNewProduct({ id: p.id, sku: p.sku, nombre: p.nombre, precioCosto: p.precioCosto, precioCliente: p.precioCliente, precioSocio: p.precioSocio, stockInicial: p.stockInicial, categoria: p.categoria });
+                    }
+                }
+            }, [newProduct.sku, inventarioActualizado]);
 
-return `
-           <div class="pedido-item">
-               <span class="pedido-num">#${idx}</span>
-               <div class="pedido-info">
-                   <div class="pedido-cliente">${p.cliente}</div>
-                   <div class="pedido-hora">${localTime} — ${syncBadge}</div>
-               </div>
-               <div class="pedido-badges">${bPago}</div>
-               <button class="badge-delete btn-borrar-pedido" data-id="${p.id}">×</button>
-           </div>`;
-}).join('');
+            const handleNewProductNameChange = (nombreVal) => {
+                let skuVal = newProduct.sku;
+                if (!newProduct.id && (!newProduct.sku || newProduct.sku.trim() === '')) { skuVal = getNextSKU(); }
+                setNewProduct(prev => ({ ...prev, nombre: nombreVal, sku: skuVal }));
+            };
 
-// Render de la Caja Menor
-const cajaItems = [...movimientosCaja].reverse().map(m => {
-    const isIngreso = m.tipo === 'Ingreso';
-    const badgeColor = isIngreso ? 'badge-pago' : 'badge-no-pago';
-    const sign = isIngreso ? '+' : '-';
-    const localTime = m.timestamp ? new Date(m.timestamp).toLocaleTimeString() : 'N/A';
-    const syncBadge = m.synced 
-        ? `<span style="color: var(--c-green); font-size: 9px;">Sinc</span>`
-        : `<span style="color: var(--c-accent); font-size: 9px;">Pend</span>`;
+            const handleCategoryChange = (cat) => {
+                let skuVal = newProduct.sku;
+                if (!newProduct.id && (!newProduct.sku || newProduct.sku.startsWith('PFNASA-') || newProduct.sku.startsWith('INASA-') || newProduct.sku.startsWith('ENASA-') || newProduct.sku.trim() === '')) { skuVal = getNextSKU(); }
+                setNewProduct(prev => ({ ...prev, categoria: cat, sku: skuVal }));
+            };
 
-    return `
-    <div class="pedido-item" style="padding: 10px;">
-        <div class="pedido-info">
-            <div class="pedido-cliente" style="font-size: 13px;">${m.concepto}</div>
-            <div class="pedido-hora">${localTime} — ${syncBadge}</div>
-        </div>
-        <div class="pedido-badges">
-            <span class="badge ${badgeColor}">${sign} $${m.valor}</span>
-        </div>
-    </div>`;
-}).join('');
+            const selectProduct = (p) => {
+                let v = 0;
+                if (datosVenta.entidad === 'Proveedor') v = p.precioCosto || 0;
+                else if (datosVenta.entidad === 'Distribuidor' || datosVenta.canal === 'Hades') v = p.precioSocio || 0;
+                else v = p.precioCliente || 0;
+                setItemActual(prev => ({ ...prev, productoId: p.id, sku: p.sku, nombre: p.nombre, valorUnitario: v }));
+                setShowProductList(false);
+            };
 
-return `
-       <div class="turno-meta"><div class="dot"></div><div class="meta-text">${estado.domiciliario} — Activo</div></div>
-       <div class="stat-row">
-           <div class="stat-card accent"><div class="stat-value">${pedidos.length}</div><div class="stat-label">Total</div></div>
-           <div class="stat-card green"><div class="stat-value">${pedidos.filter(p=>p.pago==='si').length}</div><div class="stat-label">Pagos</div></div>
-           <div class="stat-card blue"><div class="stat-value">${pedidos.filter(p=>p.pago==='no').length}</div><div class="stat-label">Pend.</div></div>
-       </div>
-       
-       <div class="card" id="formulario-pedido">
-           <div class="card-title">Nuevo Pedido</div>
-           <div class="form-group">
-               <label class="form-label">Cliente</label>
-               <input class="form-input req-field" id="pedido-cliente" placeholder="Nombre del cliente">
-           </div>
-           <div class="form-group">
-               <label class="form-label">Ubicación</label>
-               <input class="form-input req-field" id="pedido-ubicacion" placeholder="Dirección de entrega">
-           </div>
-           <div class="form-group">
-               <label class="form-label">¿Pagó?</label>
-               <div class="radio-group">
-                   <div class="radio-option green">
-                       <input type="radio" name="pago" id="pago-si" value="si" class="req-radio">
-                       <label for="pago-si">Sí</label>
-                   </div>
-                   <div class="radio-option red">
-                       <input type="radio" name="pago" id="pago-no" value="no" class="req-radio">
-                       <label for="pago-no">No</label>
-                   </div>
-               </div>
-           </div>
-           
-           <div class="collapsible" id="medios-section">
-               <div class="form-group">
-                   <label class="form-label">Medios de pago recibidos:</label>
-                   <div class="checkbox-group">
-                       <label class="checkbox-option"><input type="checkbox" class="chk-medio" value="Efectivo" data-target="box-efectivo"> Efectivo</label>
-                       <label class="checkbox-option"><input type="checkbox" class="chk-medio" value="Transferencia" data-target="box-transferencia"> Transferencia</label>
-                       <label class="checkbox-option"><input type="checkbox" class="chk-medio" value="Datáfono" data-target="box-datafono"> Datáfono</label>
-                       <label class="checkbox-option"><input type="checkbox" class="chk-medio" value="Crédito" data-target="box-credito"> Crédito</label>
-                       <label class="checkbox-option"><input type="checkbox" class="chk-medio" value="Producto en Garantía" data-target="box-garantia"> Artículo en garantía / Cruce</label>
-                   </div>
-               </div>
+            const selectSubject = (s) => {
+                setDatosVenta(prev => ({ ...prev, nombreEntidad: s.nombre }));
+                setShowSubjectList(false);
+            };
 
-               <div class="pagos-grid">
-                   <div class="pago-item" id="box-efectivo">
-                       <label>Efectivo</label>
-                       <input class="form-input p-in" data-medio="Efectivo" type="number" placeholder="Monto recibido">
-                   </div>
-                   <div class="pago-item" id="box-transferencia">
-                       <label>Transferencia</label>
-                       <input class="form-input p-in" data-medio="Transferencia" type="number" placeholder="Monto recibido">
-                   </div>
-                   <div class="pago-item" id="box-datafono" style="grid-column: 1 / -1;">
-                       <label>Datáfono</label>
-                       <input class="form-input p-in" data-medio="Datáfono" type="number" placeholder="Monto cobrado">
-                       <input class="form-input pago-subinput" id="p-datafono-cod" placeholder="Código de Aprobación (Opcional)">
-                   </div>
-                   <div class="pago-item" id="box-credito">
-                       <label>Crédito</label>
-                       <input class="form-input p-in" data-medio="Crédito" type="number" placeholder="Monto a crédito">
-                   </div>
-                   <div class="pago-item" id="box-garantia" style="grid-column: 1 / -1;">
-                       <label>Artículo / Cruce</label>
-                       <input class="form-input pago-subinput" id="p-garantia-nota" placeholder="Describe el artículo recibido">
-                       <input class="form-input p-in" data-medio="Producto en Garantía" type="number" placeholder="Ingresar valor equivalente">
-                   </div>
-               </div>
-               <div class="total-pagos-resumen">Total Calculado: <strong id="sum-ui">$0</strong></div>
-           </div>
-           
-           <button class="btn btn-success" id="btn-agregar-pedido" style="margin-top: 15px;" disabled>+ Agregar</button>
-       </div>
+            const handleUnlockVault = async (e) => {
+                e.preventDefault();
+                if (!loginEmail || !loginPassword || !inputKey) return;
+                try {
+                    const userCredential = await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
+                    const authenticatedUser = userCredential.user;
 
-       <!-- NUEVO: Tarjeta y Lista de Caja Menor -->
-       <div class="card">
-           <div class="card-title">
-               Caja Menor
-               <button class="btn btn-ghost btn-small" id="btn-abrir-caja" style="margin:0;">+ Movimiento</button>
-           </div>
-           <div class="pedidos-list">
-               ${cajaItems || '<div style="color: var(--c-muted); text-align: center; padding: 10px;">Sin movimientos de caja</div>'}
-           </div>
-       </div>
+                    if (!vaultAuthDoc) {
+                        const verificationToken = encryptVal("FERCO_VAULT_ACTIVE", inputKey);
+                        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'vault_control', 'auth'), { token: verificationToken });
+                        setVaultKey(inputKey); setIsVaultLocked(false); mostrarNotificacion("Bóveda e inicio de sesión configurado correctamente.");
+                    } else {
+                        const decryptedCheck = decryptVal(vaultAuthDoc.token, inputKey);
+                        if (decryptedCheck === 'FERCO_VAULT_ACTIVE') { setVaultKey(inputKey); setIsVaultLocked(false); setVaultError(''); mostrarNotificacion(`Uplink Seguro: ${authenticatedUser.email}`); } 
+                        else { await signOut(auth); setVaultError("⚠️ Clave Maestra de Bodega incorrecta. Acceso denegado."); }
+                    }
+                } catch (err) {
+                    console.error("Error de Login:", err);
+                    if (err.code === 'auth/invalid-credential') setVaultError("⚠️ Credenciales inválidas. El correo o la contraseña son incorrectos.");
+                    else if (err.code === 'auth/invalid-email') setVaultError("⚠️ Formato de correo electrónico inválido.");
+                    else if (err.code === 'auth/user-not-found') setVaultError("⚠️ Usuario no registrado en la base de datos de autenticación.");
+                    else setVaultError("⚠️ Error de autenticación: " + err.message);
+                }
+            };
 
-       <div class="card">
-           <div class="card-title">Pedidos Completados</div>
-           <div class="pedidos-list">${items || '<div style="color: var(--c-muted); text-align: center; padding: 10px;">Vacío</div>'}</div>
-       </div>
-       <button class="btn btn-danger" id="btn-abrir-modal-fin">Finalizar turno</button>`;
-}
+            const handleSignOut = async () => { await signOut(auth); setIsVaultLocked(true); setVaultKey(''); setLoginEmail(''); setLoginPassword(''); setInputKey(''); };
 
-function adjuntarEventosDinamicos(estado) {
-const btnIniciar = document.getElementById('btn-iniciar-turno');
-if (btnIniciar) {
-btnIniciar.onclick = () => {
-const selectNombre = document.getElementById('input-nombre');
-const nombre = selectNombre.value;
-if (!nombre) return mostrarToast('Selecciona tu nombre de la lista', 'error');
-const nuevoEstado = { 
-    iniciado: true, 
-    horaInicio: new Date().toISOString(), 
-    domiciliario: nombre, 
-    pedidos: [],
-    movimientosCaja: [] // Inicializamos el estado local de Caja Menor
-};
-guardarEstado(nuevoEstado);
-iniciarRastreoSilencioso(nombre);
-renderApp();
-};
-}
+            const iniciarEdicionDespacho = (v) => {
+                setEditingVentaId(v.id); setCarrito(v.items || []); setOldItems(JSON.parse(JSON.stringify(v.items || []))); 
+                setDatosVenta({
+                    entidad: v.entidad || 'Cliente', nombreEntidad: v.nombreEntidad || '', canal: v.canal || 'Ferco Farma',
+                    cuentaDestino: v.cuentaDestino || 'CRIS', entregaDomicilio: v.entregaDomicilio || false,
+                    valorDomicilio: v.valorDomicilio || 0, domiciliarioAsignado: v.domiciliarioAsignado || 'Pipe',
+                    aplicarDescuento: v.aplicarDescuento || false, valorDescuento: v.valorDescuento || 0
+                });
+                mostrarNotificacion(`Cargando despacho de ${v.nombreEntidad} para modificación.`);
+            };
 
-const formArea = document.getElementById('formulario-pedido');
-const pagoSi = document.getElementById('pago-si');
-const pagoNo = document.getElementById('pago-no');
-const mediosSection = document.getElementById('medios-section');
-const btnAgregar = document.getElementById('btn-agregar-pedido');
-const checkboxes = document.querySelectorAll('.chk-medio');
-const inputsPago = document.querySelectorAll('.p-in');
+            const cancelarEdicionDespacho = () => {
+                setEditingVentaId(null); setOldItems([]); setCarrito([]); setPagos([]);
+                setDatosVenta({ entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, valorDomicilio: 0, canal: 'Ferco Farma', aplicarDescuento: false, valorDescuento: 0, cuentaDestino: 'CRIS', domiciliarioAsignado: 'Pipe' });
+            };
 
-// Lógica de apertura Modal Caja Menor
-const btnAbrirCaja = document.getElementById('btn-abrir-caja');
-if (btnAbrirCaja) {
-    btnAbrirCaja.onclick = () => {
-        document.getElementById('caja-concepto').value = '';
-        document.getElementById('caja-valor').value = '';
-        document.getElementById('modal-caja').classList.add('active');
-    };
-}
-document.getElementById('btn-cancelar-caja').onclick = () => document.getElementById('modal-caja').classList.remove('active');
+            const registrarOActualizarDespacho = async (e) => {
+                e.preventDefault();
+                if (carrito.length === 0 || (totalAbonado < totalOp && datosVenta.entidad !== 'Proveedor')) return;
+                
+                try {
+                    const tieneMetodosCredito = pagos.some(p => ['Crédito', 'Cruce', 'Artículo en Garantía'].includes(p.metodo));
+                    const estadoInicial = (totalAbonado >= totalOp && !tieneMetodosCredito) ? 'Pagado' : 'Pendiente';
 
-document.getElementById('btn-guardar-caja').onclick = () => {
-    const tipo = document.querySelector('input[name="tipo-caja"]:checked').value;
-    const concepto = document.getElementById('caja-concepto').value.trim();
-    const valor = parseFloat(document.getElementById('caja-valor').value);
+                    const dataPayload = {
+                        entidad: datosVenta.entidad, canal: datosVenta.canal, cuentaDestino: datosVenta.cuentaDestino,
+                        nombreEntidad: encryptVal(datosVenta.nombreEntidad, vaultKey),
+                        responsable: encryptVal(user ? user.email : 'CRIS_ADMIN', vaultKey),
+                        totalVenta: encryptVal(totalOp, vaultKey),
+                        items: encryptVal(JSON.stringify(carrito), vaultKey),
+                        pagos: encryptVal(JSON.stringify(pagos), vaultKey),
+                        split: encryptVal(JSON.stringify(hadesSplit), vaultKey),
+                        entregaDomicilio: datosVenta.entregaDomicilio, valorDomicilio: datosVenta.valorDomicilio,
+                        domiciliarioAsignado: datosVenta.domiciliarioAsignado, aplicarDescuento: datosVenta.aplicarDescuento,
+                        valorDescuento: datosVenta.valorDescuento
+                    };
 
-    if (!concepto || isNaN(valor) || valor <= 0) {
-        return mostrarToast('Completa el concepto y un valor válido', 'error');
-    }
+                    if (editingVentaId) {
+                        const netChanges = {};
+                        
+                        oldItems.forEach(it => {
+                            if (datosVenta.canal === 'Ferco Farma' || it.descontarStock !== false) {
+                                const pid = it.productoId;
+                                const cant = parseFloat(it.cantidad) * (it.fraccion || 1);
+                                if (!netChanges[pid]) netChanges[pid] = 0;
+                                netChanges[pid] += datosVenta.entidad === 'Proveedor' ? -cant : cant;
+                            }
+                        });
 
-    const currentState = leerEstado();
-    if(!currentState.movimientosCaja) currentState.movimientosCaja = []; // Parche retro-compatibilidad
+                        carrito.forEach(it => {
+                            if (datosVenta.canal === 'Ferco Farma' || it.descontarStock !== false) {
+                                const pid = it.productoId;
+                                const cant = parseFloat(it.cantidad) * (it.fraccion || 1);
+                                if (!netChanges[pid]) netChanges[pid] = 0;
+                                netChanges[pid] += datosVenta.entidad === 'Proveedor' ? cant : -cant;
+                            }
+                        });
 
-    const nuevoMov = {
-        id: `caja_${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        tipo,
-        concepto,
-        valor,
-        synced: false
-    };
+                        for (const pid of Object.keys(netChanges)) {
+                            const diff = netChanges[pid];
+                            if (diff === 0) continue;
+                            const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'productos', pid);
+                            const pData = inventarioActualizado.find(x => x.id === pid);
+                            if (pData) {
+                                const stockPrev = parseFloat(pData.stockActual) || 0;
+                                await updateDoc(pRef, { stockActual: stockPrev + diff });
+                            }
+                        }
 
-    currentState.movimientosCaja.push(nuevoMov);
-    guardarEstado(currentState);
-    
-    document.getElementById('modal-caja').classList.remove('active');
-    syncMovCajaToFirebase(nuevoMov, currentState.domiciliario);
-    renderApp();
-    mostrarToast('Movimiento registrado', 'success');
-};
+                        const ref = doc(db, 'artifacts', appId, 'public', 'data', 'ventas', editingVentaId);
+                        await updateDoc(ref, {
+                            ...dataPayload, estado: estadoInicial,
+                            auditLog: `MODIFICADO: ${user ? user.email : 'Admin'} el ${new Date().toLocaleDateString()}`
+                        });
 
-checkboxes.forEach(chk => {
-chk.onchange = (e) => {
-const targetBox = document.getElementById(e.target.dataset.target);
-if (e.target.checked) {
-targetBox.classList.add('visible');
-} else {
-targetBox.classList.remove('visible');
-const inputNum = targetBox.querySelector('.p-in');
-if (inputNum) inputNum.value = "";
-if (targetBox.id === 'box-garantia') document.getElementById('p-garantia-nota').value = "";
-if (targetBox.id === 'box-datafono') document.getElementById('p-datafono-cod').value = "";
-actualizarSumaYValidacion();
-}
-};
-});
+                        setEditingVentaId(null); setOldItems([]);
+                        mostrarNotificacion("Registro de despacho actualizado de forma segura.");
+                    } else {
+                        const ahora = new Date();
+                        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), {
+                            ...dataPayload, estado: estadoInicial, timestamp: Date.now(),
+                            fecha: ahora.toLocaleDateString(), hora: ahora.toLocaleTimeString(),
+                            auditLog: `OP: ${user ? user.email : 'Admin'} | CANAL: ${datosVenta.canal}`
+                        });
 
-if (pagoSi && pagoNo && mediosSection) {
-pagoSi.onchange = () => { mediosSection.classList.add('open'); actualizarSumaYValidacion(); };
-pagoNo.onchange = () => {
-mediosSection.classList.remove('open');
-checkboxes.forEach(c => c.checked = false);
-document.querySelectorAll('.pago-item').forEach(box => box.classList.remove('visible'));
-inputsPago.forEach(i => i.value = "");
-document.getElementById('sum-ui').textContent = "$0";
-actualizarSumaYValidacion();
-};
-}
+                        for (const it of carrito) {
+                            if (datosVenta.canal === 'Ferco Farma' || it.descontarStock !== false) {
+                                const pRef = doc(db, 'artifacts', appId, 'public', 'data', 'productos', it.productoId);
+                                const pData = inventarioActualizado.find(x => x.id === it.productoId);
+                                if (pData) {
+                                    const stockPrev = parseFloat(pData.stockActual) || 0;
+                                    const cambio = parseFloat(it.cantidad) * it.fraccion;
+                                    const nuevoStock = datosVenta.entidad === 'Proveedor' ? (stockPrev + cambio) : (stockPrev - cambio);
+                                    await updateDoc(pRef, { stockActual: nuevoStock });
+                                }
+                            }
+                        }
+                        mostrarNotificacion("Operación de despacho inyectada con éxito.");
+                    }
 
-if(formArea) formArea.oninput = actualizarSumaYValidacion;
+                    setCarrito([]); setPagos([]);
+                    setDatosVenta(prev => ({ ...prev, entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, valorDomicilio: 0, canal: 'Ferco Farma', aplicarDescuento: false, valorDescuento: 0, cuentaDestino: 'CRIS' }));
+                } catch (err) { mostrarNotificacion("Falla de enlace de datos cloud.", "error"); }
+            };
 
-function actualizarSumaYValidacion() {
-let t = 0; 
-inputsPago.forEach(i => t += Number(i.value) || 0);
-document.getElementById('sum-ui').textContent = '$' + t.toLocaleString();
+            const ejecutarSaldadoDespacho = async (e) => {
+                e.preventDefault(); const { venta, nuevoMetodo, montoEfectivo, fechaEfectiva, observacionCierre } = saldarModal; if (!venta) return;
+                try {
+                    const pagosActualizados = (venta.pagos || []).map(p => {
+                        if (['Crédito', 'Cruce', 'Artículo en Garantía'].includes(p.metodo)) {
+                            return { ...p, metodo: nuevoMetodo, monto: parseFloat(montoEfectivo) || p.monto, fechaRecaudo: fechaEfectiva, comentario: `${p.comentario || ''} | LIQUIDADO ${fechaEfectiva}: ${observacionCierre}`.trim() };
+                        } return p;
+                    });
+                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', venta.id), { estado: 'Pagado', pagos: encryptVal(JSON.stringify(pagosActualizados), vaultKey) });
+                    setSaldarModal({ show: false, venta: null, nuevoMetodo: 'Efectivo', montoEfectivo: '', fechaEfectiva: '', observacionCierre: '' });
+                    mostrarNotificacion("Compromiso saldado.");
+                } catch (err) { mostrarNotificacion("Error.", "error"); }
+            };
 
-const cliente = document.getElementById('pedido-cliente').value.trim();
-const ubicacion = document.getElementById('pedido-ubicacion').value.trim();
-const pagoSeleccionado = document.querySelector('input[name="pago"]:checked');
+            const upsertProd = async (e) => {
+                e.preventDefault(); 
+                const skuF = newProduct.sku.trim() || getNextSKU();
+                const normalizedCat = normalizarCategoria(newProduct.categoria);
 
-let isValid = false;
-if (cliente !== "" && ubicacion !== "" && pagoSeleccionado) {
-if (pagoSeleccionado.value === 'no') { isValid = true; } 
-else if (pagoSeleccionado.value === 'si') {
-const algunCheckboxMarcado = Array.from(checkboxes).some(chk => chk.checked);
-if (algunCheckboxMarcado && t > 0) isValid = true;
-}
-}
-btnAgregar.disabled = !isValid;
-}
+                const encryptedData = { 
+                    sku: skuF, categoria: normalizedCat, nombre: encryptVal(newProduct.nombre.toUpperCase(), vaultKey), 
+                    precioCosto: encryptVal(newProduct.precioCosto, vaultKey), precioSocio: encryptVal(newProduct.precioSocio, vaultKey),
+                    precioCliente: normalizedCat === 'Empaque' ? encryptVal(0, vaultKey) : encryptVal(newProduct.precioCliente, vaultKey),
+                    stockActual: parseFloat(newProduct.stockInicial) || 0, stockInicial: parseFloat(newProduct.stockInicial) || 0, timestamp: Date.now()
+                };
 
-if (btnAgregar) {
-btnAgregar.onclick = () => {
-const cliente = document.getElementById('pedido-cliente').value.trim();
-const ubicacion = document.getElementById('pedido-ubicacion').value.trim();
-const pagoEl = document.querySelector('input[name="pago"]:checked');
+                if (newProduct.id) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', newProduct.id), encryptedData);
+                else await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), encryptedData);
+                setNewProduct({ id: null, sku: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
+                mostrarNotificacion("Catálogo de inventarios actualizado.");
+            };
 
-let desglosados = [], total = 0;
-if (pagoEl.value === 'si') {
-document.querySelectorAll('.pago-item.visible .p-in').forEach(i => {
-let v = Number(i.value); 
-if(v > 0) { 
-let item = { medio: i.dataset.medio, valor: v };
-if (i.dataset.medio === 'Datáfono') item.codigoAprobacion = document.getElementById('p-datafono-cod').value.trim();
-else if (i.dataset.medio === 'Producto en Garantía') item.notaGarantia = document.getElementById('p-garantia-nota').value.trim();
-desglosados.push(item); 
-total += v; 
-}
-});
-}
+            const eliminarTodoElInventario = async () => {
+                const confirmacion = window.prompt('⚠️ ADVERTENCIA CRÍTICA: Estás a punto de vaciar todo el inventario.\nEscribe la frase "ELIMINAR TODO" para confirmar esta acción:');
+                if (confirmacion !== 'ELIMINAR TODO') { mostrarNotificacion("Operación abortada por seguridad.", "error"); return; }
+                try {
+                    setIsSyncing(true);
+                    const querySnapshot = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'productos'));
+                    const batch = writeBatch(db); let count = 0;
+                    querySnapshot.forEach((document) => { batch.delete(document.ref); count++; });
+                    if (count === 0) { mostrarNotificacion("La base de datos ya está vacía."); setIsSyncing(false); return; }
+                    await batch.commit();
+                    mostrarNotificacion(`Limpieza exitosa. Se eliminaron ${count} productos permanentemente.`);
+                    setNewProduct({ id: null, sku: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
+                } catch (error) { mostrarNotificacion("Falla de enlace al intentar eliminar los datos.", "error"); } finally { setIsSyncing(false); }
+            };
 
-btnAgregar.disabled = true;
-btnAgregar.textContent = "Ubicando GPS...";
-mostrarToast("Localizando dispositivo...", "default");
+            const uploadExcel = async (e, type) => {
+                const file = e.target.files[0]; if (!file) return; setIsSyncing(true);
+                const reader = new FileReader();
+                reader.onload = async (evt) => {
+                    try {
+                        const bstr = evt.target.result; const wb = XLSX.read(bstr, { type: 'binary' });
+                        const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+                        
+                        if (type === 'INVENTARIO') {
+                            const excelIds = new Set(data.map(row => row.ID).filter(Boolean));
+                            const excelSkus = new Set(data.map(row => String(row.SKU || '').trim().toUpperCase()).filter(Boolean));
+                            let eliminados = 0;
+                            const itemsAEliminar = inventarioActualizado.filter(p => !excelIds.has(p.id) && !excelSkus.has(p.sku.toUpperCase()));
+                            for (const item of itemsAEliminar) { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', item.id)); eliminados++; }
 
-obtenerUbicacionGPS((lat, lng) => { registrarPedidoFinal(cliente, ubicacion, pagoEl.value, desglosados, total, lat, lng); });
-};
-}
+                            let creados = 0; let actualizados = 0; let currentBatch = [...inventarioActualizado];
+                            for (const row of data) {
+                                let skuE = String(row.SKU || "").trim().toUpperCase(); const cat = normalizarCategoria(row.Categoria || 'Producto Final');
+                                if (!skuE) skuE = getNextSKU(currentBatch);
+                                const exist = currentBatch.find(p => (row.ID && p.id === row.ID) || p.sku.toUpperCase() === skuE); 
+                                const parsedStock = parseFloat(row.Stock) || 0;
+                                const prodData = {
+                                    sku: skuE, categoria: cat, nombre: encryptVal(String(row.Nombre || "PRODUCTO").toUpperCase(), vaultKey),
+                                    precioCosto: encryptVal(parseFloat(row.Costo) || 0, vaultKey), precioCliente: encryptVal(parseFloat(row.Precio_Cliente) || 0, vaultKey), 
+                                    precioSocio: encryptVal(parseFloat(row.Precio_Socio) || 0, vaultKey), stockActual: parsedStock, stockInicial: parsedStock, timestamp: Date.now()
+                                };
+                                if (exist) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', exist.id), prodData); actualizados++; } 
+                                else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), prodData); creados++; }
+                            }
+                            mostrarNotificacion(`Conciliación de Inventario: ${creados} Creados, ${actualizados} Actualizados, ${eliminados} Eliminados.`);
+                        } else if (type === 'SUJETOS') {
+                            const excelIds = new Set(data.map(row => row.ID).filter(Boolean)); const excelNames = new Set(data.map(row => String(row.Nombre || '').trim().toUpperCase()).filter(Boolean));
+                            let eliminados = 0; const sujetosAEliminar = decryptedSujetos.filter(s => !excelIds.has(s.id) && !excelNames.has(s.nombre.toUpperCase()));
+                            for (const s of sujetosAEliminar) { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', s.id)); eliminados++; }
 
-const btnAbrirFin = document.getElementById('btn-abrir-modal-fin');
-if (btnAbrirFin) btnAbrirFin.onclick = () => document.getElementById('modal-fin').classList.add('active');
+                            let creados = 0; let actualizados = 0;
+                            for (const row of data) { 
+                                if (row.Nombre) {
+                                    const nameE = String(row.Nombre).trim().toUpperCase(); const exist = decryptedSujetos.find(s => (row.ID && s.id === row.ID) || s.nombre.toUpperCase() === nameE);
+                                    const sujetoData = { nombre: encryptVal(nameE, vaultKey), tipo: row.Tipo || 'Cliente', telefono: encryptVal(row.Telefono || '', vaultKey), timestamp: Date.now() };
+                                    if (exist) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', exist.id), sujetoData); actualizados++; } 
+                                    else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), sujetoData); creados++; }
+                                }
+                            }
+                            mostrarNotificacion(`Conciliación de Sujetos: ${creados} Creados, ${actualizados} Actualizados, ${eliminados} Eliminados.`);
+                        } else if (type === 'DESPACHOS') {
+                            const excelVentas = {};
+                            data.forEach(row => {
+                                const idV = row.ID_Venta || '';
+                                if (idV) {
+                                    if (!excelVentas[idV]) {
+                                        excelVentas[idV] = { id: idV, fecha: row.Fecha, hora: row.Hora, cliente: row.Sujeto, tipoCliente: row.Tipo_Sujeto || 'Cliente', canal: row.Canal || 'Ferco Farma', cuentaIngreso: row.Cuenta_Ingreso || 'CRIS', estado: row.Estado || 'Pagado', total: parseFloat(row.Total) || 0, metodo: row.Metodo || 'Efectivo', obs: row.Obs || '', items: [] };
+                                    }
+                                    const p = inventarioActualizado.find(x => x.sku === row.SKU);
+                                    excelVentas[idV].items.push({ productoId: p ? p.id : 'temp-id', sku: row.SKU, nombre: p ? p.nombre : 'Producto', whitespace: 1, cantidad: parseFloat(row.Cantidad) || 1, valorUnitario: parseFloat(row.Valor_Uni) || 0, fraccion: 1, descontarStock: true });
+                                }
+                            });
 
-const btnsBorrar = document.querySelectorAll('.btn-borrar-pedido');
-btnsBorrar.forEach(btn => btn.onclick = (e) => {
-pedidoAEliminar = e.currentTarget.dataset.id;
-document.getElementById('modal-eliminar').classList.add('active');
-});
-}
+                            const excelVentaIds = new Set(Object.keys(excelVentas)); let eliminados = 0;
+                            if (excelVentaIds.size > 0) { const ventasAEliminar = decryptedVentas.filter(v => !excelVentaIds.has(v.id)); for (const v of ventasAEliminar) { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', v.id)); eliminados++; } }
 
-function registrarPedidoFinal(cliente, ubicacion, pago, desglosados, total, lat, lng) {
-const estado = leerEstado();
-const pedido = { id: `p_${Date.now()}`, timestamp: new Date().toISOString(), cliente, ubicacion, pago, pagosDesglosados: desglosados, valorPagado: total, lat: lat, lng: lng, synced: false };
-estado.pedidos.push(pedido);
-guardarEstado(estado);
-syncPedidoToFirebase(pedido, estado.domiciliario);
-renderApp();
-mostrarToast('Pedido Registrado');
-}
+                            let creados = 0; let actualizados = 0;
+                            for (const key of Object.keys(excelVentas)) {
+                                const row = excelVentas[key]; const exist = decryptedVentas.find(v => v.id === row.id);
+                                const mP = [{ metodo: row.metodo, monto: row.total, comentario: row.obs }]; const splitBase = { ferco: row.total, hades: 0 };
+                                const ventaPayload = { entidad: row.tipoCliente, canal: row.canal, cuentaDestino: row.cuentaIngreso, nombreEntidad: encryptVal(row.cliente.toUpperCase(), vaultKey), responsable: encryptVal(user ? user.email : 'CARGA_MASIVA', vaultKey), totalVenta: encryptVal(row.total, vaultKey), items: encryptVal(JSON.stringify(row.items), vaultKey), pagos: encryptVal(JSON.stringify(mP), vaultKey), split: encryptVal(JSON.stringify(splitBase), vaultKey), estado: row.estado };
+                                if (exist) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', exist.id), ventaPayload); actualizados++; } 
+                                else { const ahora = new Date(); await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), { ...ventaPayload, timestamp: Date.now(), fecha: row.fecha || ahora.toLocaleDateString(), hora: row.hora || ahora.toLocaleTimeString(), auditLog: 'SINCRONIZACIÓN EXCEL' }); creados++; }
+                            }
+                            mostrarNotificacion(`Conciliación de Despachos: ${creados} Creados, ${actualizados} Actualizados, ${eliminados} Eliminados.`);
+                        }
+                    } catch (err) { mostrarNotificacion("Error en el mapeo de columnas del archivo.", "error"); } finally { setIsSyncing(false); e.target.value = null; }
+                }; reader.readAsBinaryString(file);
+            };
 
-document.getElementById('btn-cancelar-modal').onclick = () => document.getElementById('modal-fin').classList.remove('active');
-document.getElementById('btn-confirmar-modal').onclick = () => { document.getElementById('modal-fin').classList.remove('active'); limpiarEstado(); renderApp(); mostrarToast('Turno finalizado', 'success'); };
-document.getElementById('btn-cancelar-eliminar').onclick = () => { document.getElementById('modal-eliminar').classList.remove('active'); pedidoAEliminar = null; };
-document.getElementById('btn-confirmar-eliminar').onclick = () => {
-if (pedidoAEliminar) {
-const estado = leerEstado();
-estado.pedidos = estado.pedidos.filter(p => p.id !== pedidoAEliminar);
-guardarEstado(estado);
-eliminarPedidoFirebase(pedidoAEliminar);
-pedidoAEliminar = null;
-document.getElementById('modal-eliminar').classList.remove('active');
-renderApp();
-mostrarToast('Registro eliminado', 'success');
-}
-};
+            const downloadTemplate = (type) => {
+                let data = [];
+                if (type === 'INVENTARIO') {
+                    if (inventarioActualizado.length > 0) {
+                        data = inventarioActualizado.map(p => ({ ID: p.id, SKU: p.sku, Nombre: p.nombre, Categoria: p.categoria, Costo: p.precioCosto, Precio_Cliente: p.precioCliente, Precio_Socio: p.precioSocio, Stock: p.stockActual }));    
+                    } else {
+                        data = [{ ID: "", SKU: "NASA-001", Nombre: "ACETAMINOFEN", Categoria: "Producto Final", Costo: 1000, Precio_Cliente: 1500, Precio_Socio: 1200, Stock: 50 }];
+                    }
+                }
+                if (type === 'SUJETOS') {
+                    if (decryptedSujetos.length > 0) data = decryptedSujetos.map(s => ({ Nombre: s.nombre, Tipo: s.tipo, Telefono: s.telefono }));
+                    else data = [{ Nombre: "JUAN PEREZ", Tipo: "Cliente", Telefono: "300123456" }];
+                }
+                if (type === 'DESPACHOS') {
+                    if (decryptedVentas.length > 0) {
+                        data = [];
+                        decryptedVentas.forEach(v => {
+                            (v.items || []).forEach(it => {
+                                data.push({
+                                    Fecha: v.fecha, Hora: v.hora, Sujeto: v.nombreEntidad, Tipo_Sujeto: v.entidad, Canal: v.canal,
+                                    SKU: it.sku, Cantidad: it.cantidad, Valor_Uni: it.valorUnitario, Total: v.totalVenta,
+                                    Metodo: v.pagos?.map(p => p.metodo).join(', ') || 'Efectivo', Obs: v.pagos?.map(p => p.comentario).filter(Boolean).join(' | ') || '',
+                                    Cuenta_Ingreso: v.cuentaDestino || 'CRIS', Estado: v.estado || 'Pagado'
+                                });
+                            });
+                        });
+                    } else {
+                        data = [{ Fecha: "15/05/2026", Hora: "09:00:00", Sujeto: "JUAN PEREZ", Tipo_Sujeto: "Cliente", Canal: "Ferco Farma", SKU: "NASA-001", Cantidad: 1, Valor_Uni: 1500, Total: 1500, Metodo: "Efectivo", Obs: "Carga", Cuenta_Ingreso: "CRIS", Estado: "Pendiente" }];
+                    }
+                }
+                const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Plantilla"); XLSX.writeFile(wb, `PLANTILLA_${type}.xlsx`);
+            };
+            const exportarPlantilla = () => downloadTemplate('INVENTARIO');
 
-const estadoInicial = leerEstado();
-if (estadoInicial && estadoInicial.iniciado && estadoInicial.domiciliario) { iniciarRastreoSilencioso(estadoInicial.domiciliario); }
-renderApp();
-</script>
+            const exportarVentas = () => {
+                const ws = XLSX.utils.json_to_sheet(decryptedVentas.map(v => ({ ID: v.id, FECHA: v.fecha, HORA: v.hora, CANAL: v.canal, TIPO: v.entidad, SUJETO: v.nombreEntidad, CUENTA_INGRESO: v.cuentaDestino || 'CRIS', STATUS: v.estado, TOTAL: v.totalVenta })));
+                const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Log"); XLSX.writeFile(wb, `FERCO_FINANCE_REPORT_${Date.now()}.xlsx`);
+            };
+
+            useEffect(() => { if (!loading && window.lucide) window.lucide.createIcons(); }, [loading, view, productos, ventas, carrito, datosVenta, sujetos, pagos, metodoActual, newProduct, newSujeto, showProductList, showSubjectList, saldarModal, isVaultLocked, editingVentaId, itemActual]);
+
+            if (loading) return <div className="flex h-screen items-center justify-center bg-[#020206] text-space-purple font-black animate-pulse">Central FERCO FARMA Activo...</div>;
+
+            if (isVaultLocked) {
+                return (
+                    <div className="flex h-screen items-center justify-center bg-[#020206] p-4 text-white font-sans relative">
+                        <div className="scanline"></div>
+                        <div className="glass-panel max-w-md w-full p-8 space-y-6 border border-[#9333ea]/30 text-center shadow-[0_0_50px_rgba(147,51,234,0.15)] animate-in fade-in duration-300">
+                            <div className="flex justify-center mb-2"><div className="p-4 bg-space-purple/10 rounded-full border border-space-purple/20 animate-pulse"><i data-lucide="shield-alert" className="w-12 h-12 text-space-purple"></i></div></div>
+                            <div>
+                                <h2 className="text-xl font-black uppercase text-white tracking-tighter italic">{!vaultAuthDoc ? "ESTABLECER ACCESOS" : "PORTAL DE ACCESO SEGURO"}</h2>
+                                <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mt-1">{!vaultAuthDoc ? "Defina la clave maestra de encriptación de datos" : "Escriba sus credenciales de Google y la clave maestra"}</p>
+                            </div>
+                            <form onSubmit={handleUnlockVault} className="space-y-4">
+                                <input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="CORREO CORPORATIVO..." className="w-full p-3 bg-black/60 rounded-xl text-xs font-bold border border-white/10 text-center text-white placeholder-slate-700 outline-none" required />
+                                <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="CONTRASEÑA..." className="w-full p-3 bg-black/60 rounded-xl text-xs font-bold border border-white/10 text-center text-white placeholder-slate-700 outline-none" required />
+                                <input type="password" value={inputKey} onChange={e => setInputKey(e.target.value)} placeholder="CLAVE MAESTRA BODEGA..." className="w-full p-3 bg-black/60 rounded-xl text-xs font-black border border-[#9333ea]/30 text-center text-[#39ff14] placeholder-slate-700 outline-none" required />
+                                {vaultError && <p className="text-[10px] text-red-500 font-black uppercase leading-relaxed">{vaultError}</p>}
+                                <button type="submit" className="btn-primary-nasa text-xs tracking-widest uppercase italic font-black">Autenticar y Desbloquear</button>
+                            </form>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="max-w-[1600px] mx-auto p-4 md:p-6 lg:p-8">
+                    {notificacion.show && (
+                        <div className={`fixed bottom-6 right-6 z-50 p-4 rounded-xl shadow-2xl animate-bounce border text-xs font-black uppercase flex items-center gap-3 bg-black transition-all duration-300 ${notificacion.tipo === 'success' ? 'border-cyber-green text-cyber-green shadow-cyber-green/10' : 'border-red-500 text-red-500 shadow-red-500/10'}`}>
+                            <i data-lucide={notificacion.tipo === 'success' ? "check-circle" : "alert-triangle"}></i>
+                            <span>{notificacion.mensaje}</span>
+                        </div>
+                    )}
+
+                    {saldarModal.show && (
+                        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+                            <div className="glass-panel max-w-lg w-full p-6 space-y-5 border border-hades-gold/30 shadow-2xl">
+                                <div className="flex justify-between items-center border-b border-white/5 pb-3">
+                                    <h3 className="text-sm font-black text-hades-gold uppercase tracking-widest flex items-center gap-2"><i data-lucide="check-check"></i> Liquidar Compromiso de Pago</h3>
+                                    <button onClick={() => setSaldarModal({ show: false, venta: null })} className="text-slate-500 hover:text-white"><i data-lucide="x" className="w-5 h-5"></i></button>
+                                </div>
+                                <div className="text-xs space-y-2 bg-black/40 p-4 rounded-xl border border-white/5">
+                                    <p><span className="opacity-50 uppercase">Sujeto:</span> <strong>{saldarModal.venta?.nombreEntidad}</strong></p>
+                                    <p><span className="opacity-50 uppercase">Monto Pendiente:</span> <strong className="text-cyber-green">${saldarModal.venta?.totalVenta?.toLocaleString()}</strong></p>
+                                </div>
+                                <form onSubmit={ejecutarSaldadoDespacho} className="space-y-4">
+                                    <select value={saldarModal.nuevoMetodo} onChange={e => setSaldarModal({ ...saldarModal, nuevoMetodo: e.target.value })} className="w-full p-3 bg-[#1a1a24] border border-white/5 rounded-xl text-xs text-white font-bold outline-none"><option value="Efectivo">Efectivo</option><option value="Transferencia">Transferencia</option><option value="Datáfono">Datáfono</option></select>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <input type="number" value={saldarModal.montoEfectivo} onChange={e => setSaldarModal({ ...saldarModal, montoEfectivo: e.target.value })} className="bg-[#1a1a24] border border-white/5 p-3 rounded-xl text-xs text-cyber-green font-black" required />
+                                        <input type="date" value={saldarModal.fechaEfectiva} onChange={e => setSaldarModal({ ...saldarModal, fechaEfectiva: e.target.value })} className="bg-[#1a1a24] border border-white/5 p-3 rounded-xl text-xs text-white font-bold" required />
+                                    </div>
+                                    <textarea value={saldarModal.observacionCierre} onChange={e => setSaldarModal({ ...saldarModal, observacionCierre: e.target.value })} placeholder="Observación de Cierre..." className="w-full p-3 bg-[#1a1a24] border border-white/5 rounded-xl text-xs text-white h-16 resize-none font-bold outline-none" required></textarea>
+                                    <div className="grid grid-cols-2 gap-3"><button type="button" onClick={() => setSaldarModal({ show: false, venta: null })} className="py-3 bg-slate-800 rounded-xl text-xs font-black uppercase text-slate-400">Cancelar</button><button type="submit" className="py-3 bg-hades-gold text-black rounded-xl text-xs font-black uppercase shadow-lg">¡Saldar Despacho!</button></div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    <header className="flex flex-col lg:flex-row justify-between items-center mb-8 gap-6 border-b border-white/5 pb-6">
+                        <div className="flex items-center gap-4 text-white">
+                            <img src="logo.jpg" alt="L" className="w-12 h-12 rounded-xl border border-white/10 shadow-xl" />
+                            <div><h1 className="text-3xl font-black italic tracking-tighter uppercase">FERCO <span className="text-space-orange">FARMA</span></h1><p className="text-[7px] uppercase tracking-[0.5em] font-black text-space-purple opacity-60">REGISTROS DE BODEGA v21.0</p></div>
+                        </div>
+                        <nav className="flex flex-wrap gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
+                            {['dashboard', 'despacho', 'inventario', 'directorio'].map(v => (<button key={v} onClick={() => setView(v)} className={`px-5 py-2 rounded-lg font-black text-[9px] uppercase transition-all ${view===v?'bg-white text-black shadow-xl':'text-slate-500 hover:text-white'}`}>{v.toUpperCase()}</button>))}
+                        </nav>
+                        <div className="flex gap-2">
+                            <button onClick={handleSignOut} className="px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 font-black text-[9px] uppercase hover:bg-red-500 hover:text-white transition-all"><i data-lucide="lock" className="w-3.5 h-3.5 inline mr-1"></i> Cerrar Sesión</button>
+                            <button onClick={exportarVentas} className="px-5 py-2.5 rounded-lg bg-cyber-green text-black font-black text-[10px] uppercase hover:scale-105 transition-all flex items-center gap-2"><i data-lucide="download-cloud"></i> INFORME</button>
+                        </div>
+                    </header>
+
+                    {view === 'dashboard' ? (
+                        <div className="space-y-6 animate-in fade-in duration-500">
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                {[ { l: 'TOTAL INGRESO x CLIENTES', v: metrics.cli, c: '#39ff14', i: 'trending-up' }, { l: 'TOTAL INGRESO DISTRIBUIDORES', v: metrics.dist, c: '#9333ea', i: 'users' }, { l: 'BALANCE PROVEEDORES', v: metrics.prov, c: '#f97316', i: 'shopping-cart' }, { l: 'VALOR INVENTARIO', v: metrics.valorBodega, c: '#00f3ff', i: 'package' } ].map((m, i) => (
+                                    <div key={i} className="glass-panel p-5 border-l-4 shadow-lg" style={{borderColor: m.c}}><p className="text-[8px] font-black text-slate-500 uppercase mb-2 tracking-widest">{m.l}</p><p className="text-2xl font-black italic" style={{color: m.c}}>${(m.v || 0).toLocaleString()}</p></div>
+                                ))}
+                            </div>
+                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                                <div className="lg:col-span-4 glass-panel p-6 shadow-xl border border-white/5">
+                                    <h3 className="text-[10px] font-black uppercase mb-6 flex items-center gap-2 text-space-purple italic border-b border-white/5 pb-4"><i data-lucide="award"></i> TOP Clientes</h3>
+                                    <div className="space-y-3">
+                                        {rankingClientes.map((c, i) => (
+                                            <div key={i} className="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/5 transition-all hover:bg-space-purple/5"><div><p className="text-[10px] font-black uppercase text-white">{c.nombre}</p><p className="text-[8px] opacity-40">{c.count} Compras</p></div><p className="font-black text-cyber-green italic text-xs">${c.total.toLocaleString()}</p></div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="lg:col-span-8 glass-panel p-6 min-h-[400px] flex items-center justify-center text-white">
+                                    {ReactApexChart && <ReactApexChart options={{ labels: ['Clientes', 'Aliados', 'Proveedores'], colors: ['#39ff14', '#9333ea', '#f97316'], theme: { mode: 'dark' }, chart: { background: 'transparent' }, stroke: { show: false }, legend: { position: 'bottom', fontStyle: 'italic', fontWeight: 900 } }} series={[metrics.cli, metrics.dist, metrics.prov]} type="donut" width="100%" height={340} />}
+                                </div>
+                            </div>
+                        </div>
+                    ) : view === 'despacho' ? (
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-500">
+                            <div className="lg:col-span-5 space-y-6">
+                                <div className="glass-panel p-6 space-y-5 border-space-purple/20 shadow-2xl">
+                                    <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                                        <p className="text-[9px] font-black tracking-wider uppercase text-space-purple italic">
+                                            {editingVentaId ? "⚡ MODIFICAR DESPACHO REGISTRADO" : "🛒 GENERAR NUEVO DESPACHO"}
+                                        </p>
+                                        {editingVentaId && (
+                                            <button onClick={cancelarEdicionDespacho} className="text-[8px] px-2 py-1 bg-red-500/20 text-red-500 rounded font-black uppercase hover:bg-red-500 hover:text-white transition-all">Cancelar</button>
+                                        )}
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-2 p-1 bg-black/40 rounded-xl border border-white/10 shadow-inner">
+                                        {['Ferco Farma', 'Hades'].map(c => <button key={c} type="button" onClick={()=>setDatosVenta({...datosVenta, canal:c, entidad: 'Cliente'})} className={`py-3 rounded-lg text-[10px] font-black uppercase transition-all ${datosVenta.canal===c?'bg-space-orange text-white shadow-lg':'text-slate-600'}`}>{c}</button>)}
+                                    </div>
+
+                                    {datosVenta.canal !== 'Hades' && (
+                                        <div className="flex p-1 bg-black/40 rounded-xl border border-white/10 shadow-inner">
+                                            {['Cliente', 'Distribuidor', 'Proveedor'].map(ent => (
+                                                <button key={ent} type="button" onClick={() => { setDatosVenta({...datosVenta, entidad: ent, entregaDomicilio: false}); setPagos([]); }} className={`flex-1 py-2 rounded-lg text-[8px] font-black uppercase transition-all ${datosVenta.entidad === ent ? 'bg-white text-black shadow-lg' : 'text-slate-600'}`}>{ent}</button>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    <div className="relative">
+                                        <input type="text" value={datosVenta.nombreEntidad} onFocus={() => setShowSubjectList(true)} onChange={(e) => setDatosVenta({...datosVenta, nombreEntidad: e.target.value})} placeholder="SELECCIONAR RESPONSABLE..." className="w-full p-3 bg-black/60 rounded-xl text-xs border border-white/10 text-white uppercase outline-none shadow-inner" />
+                                        {showSubjectList && (
+                                            <div className="selectable-list text-white">
+                                                {decryptedSujetos.filter(s => s.tipo === datosVenta.entidad && s.nombre.toLowerCase().includes(datosVenta.nombreEntidad.toLowerCase())).map(s => (
+                                                    <div key={s.id} onClick={() => selectSubject(s)} className="selectable-item">{s.nombre}</div>
+                                                ))}
+                                                <div onClick={()=>setShowSubjectList(false)} className="p-2 text-[7px] text-center text-red-500 uppercase cursor-pointer">Cerrar Lista</div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="space-y-3">
+                                        <div className="relative">
+                                            <input type="text" value={itemActual.sku} onFocus={() => setShowProductList(true)} onChange={(e)=>setItemActual({...itemActual, sku: e.target.value, productoId:''})} placeholder="SKU / PRODUCTO..." className="w-full p-3 bg-black/60 rounded-xl text-xs border border-[#00f3ff]/20 focus:border-space-purple outline-none font-bold uppercase text-white shadow-inner" />
+                                            {itemActual.nombre && (<div className="text-[10px] text-cyber-green font-black uppercase mt-1">✓ Seleccionado: {itemActual.nombre}</div>)}
+                                            {showProductList && (
+                                                <div className="selectable-list">
+                                                    {inventarioActualizado.filter(p => p.sku.toLowerCase().includes(itemActual.sku.toLowerCase()) || p.nombre.toLowerCase().includes(itemActual.sku.toLowerCase())).map(p => (
+                                                        <div key={p.id} onClick={() => selectProduct(p)} className="selectable-item">{p.sku} - {p.nombre}</div>
+                                                    ))}
+                                                    <div onClick={()=>setShowProductList(false)} className="p-2 text-[7px] text-center text-red-500 uppercase cursor-pointer">Cerrar Lista</div>
+                                                </div>
+                                            )}
+                                        </div>
+                                        
+                                        {itemActual.sku.toUpperCase().includes('GDT') && (
+                                            <div className="flex gap-2 p-2 bg-black/40 rounded-xl border border-hades-gold/20">
+                                                {[1, 0.5, 0.25].map(f => (<button key={f} type="button" onClick={()=>setItemActual({...itemActual, fraccion: f})} className={`flex-1 py-1.5 rounded-lg text-[8px] font-black border transition-all ${itemActual.fraccion === f ? 'bg-hades-gold text-black border-hades-gold shadow-md' : 'border-white/5 text-slate-500'}`}>{f === 1 ? 'UNI' : f === 0.5 ? '1/2' : '1/4'}</button>))}
+                                            </div>
+                                        )}
+
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <input type="number" value={itemActual.cantidad} onChange={e=>setItemActual({...itemActual, cantidad:e.target.value})} placeholder="Cantidad" className="bg-black/60 p-3 rounded-xl text-xs border border-white/5 font-black text-white" />
+                                            <input type="number" value={itemActual.valorUnitario} onChange={e=>setItemActual({...itemActual, valorUnitario:e.target.value})} placeholder="VALOR $" className="bg-black/60 p-3 rounded-xl text-xs text-cyber-green font-black border border-white/5 outline-none focus:border-white placeholder:text-cyber-green/30 placeholder:drop-shadow-md shadow-inner" />
+                                        </div>
+
+                                        {datosVenta.canal === 'Hades' && (
+                                            <div className="flex justify-between items-center p-2 bg-black/40 rounded-xl border border-hades-gold/20 shadow-inner mt-2 animate-in fade-in">
+                                                <span className="text-[9px] font-black uppercase text-hades-gold italic">
+                                                    ¿Descontar de Bodega Ferco?
+                                                </span>
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => setItemActual({...itemActual, descontarStock: !itemActual.descontarStock})} 
+                                                    className={`w-9 h-4 rounded-full relative transition-all shadow-md ${itemActual.descontarStock !== false ? 'bg-hades-gold' : 'bg-slate-800'}`}
+                                                >
+                                                    <div className={`absolute top-0.5 w-3 h-3 bg-black rounded-full transition-all ${itemActual.descontarStock !== false ? 'right-0.5' : 'left-0.5'}`}></div>
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        <button type="button" onClick={()=>{ if(!itemActual.productoId || !itemActual.cantidad) return; setCarrito([...carrito, { ...itemActual, idT: Date.now(), subtotal: parseFloat(itemActual.cantidad) * itemActual.fraccion * parseFloat(itemActual.valorUnitario) }]); setItemActual({sku:'', nombre:'', productoId:'', cantidad:1, valorUnitario:0, fraccion: 1, descontarStock: true}); }} className="w-full py-3 bg-space-purple/10 text-space-purple border border-space-purple/30 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-md">AGREGAR A COMPRA</button>
+                                    </div>
+
+                                    {/* CORRECCIÓN: Nombres Claros para el Cálculo Financiero */}
+                                    {datosVenta.canal === 'Hades' && carrito.length > 0 && (
+                                        <div className="p-4 hades-card rounded-2xl space-y-2 animate-in slide-in-from-top-2 shadow-2xl">
+                                            <div className="flex justify-between text-[9px] font-black uppercase text-slate-400">
+                                                <span>Ingreso FERCO FARMA (Valor Distribuidor + Domi):</span>
+                                                <span className="text-cyber-green">${hadesSplit.ferco.toLocaleString()}</span>
+                                            </div>
+                                            <div className="flex justify-between text-[9px] font-black uppercase border-t border-white/5 pt-2 text-hades-gold">
+                                                <span>Ganancia HADES:</span>
+                                                <span>${hadesSplit.hades.toLocaleString()}</span>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {carrito.length > 0 && (
+                                        <div className="p-4 bg-white/5 rounded-2xl border border-white/5 max-h-40 overflow-y-auto table-container shadow-inner">
+                                            <table className="w-full text-[8px] font-black uppercase text-white">
+                                                <tbody>
+                                                    {carrito.map(it => (
+                                                        <tr key={it.idT} className="border-b border-white/5">
+                                                            <td className="py-2 truncate max-w-[120px]">
+                                                                {it.nombre}
+                                                                {datosVenta.canal === 'Hades' && (
+                                                                    <span className={`ml-2 px-1 py-0.5 rounded text-[6px] ${it.descontarStock !== false ? 'bg-cyber-green/20 text-cyber-green border border-cyber-green/30' : 'bg-space-orange/20 text-space-orange border border-space-orange/30'}`}>
+                                                                        {it.descontarStock !== false ? 'FERCO' : 'EXT'}
+                                                                    </span>
+                                                                )}
+                                                            </td>
+                                                            <td className="text-center">{it.cantidad * it.fraccion} Uni</td>
+                                                            <td className="text-right text-cyber-green font-mono">${(it.subtotal || 0).toLocaleString()}</td>
+                                                            <td className="text-right"><button type="button" onClick={()=>setCarrito(carrito.filter(x=>x.idT!==it.idT))} className="text-red-500 pl-3">x</button></td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+
+                                    <div className="p-4 bg-black/30 rounded-2xl border border-white/5 space-y-4">
+                                        {datosVenta.entidad !== 'Proveedor' && (
+                                            <div className="flex justify-between items-center text-[9px] font-black uppercase"><span>Incluye Domi?</span><button type="button" onClick={()=>setDatosVenta({...datosVenta, entregaDomicilio: !datosVenta.entregaDomicilio})} className={`w-9 h-4 rounded-full relative transition-all ${datosVenta.entregaDomicilio?'bg-cyan-500':'bg-slate-800'}`}><div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${datosVenta.entregaDomicilio?'right-0.5':'left-0.5'}`}></div></button></div>
+                                        )}
+                                        {datosVenta.entregaDomicilio && (
+                                            <div className="space-y-2 animate-in fade-in">
+                                                <div className="grid grid-cols-4 gap-1">{staffDomi.map(s => <button key={s} type="button" onClick={()=>setDatosVenta({...datosVenta, domiciliarioAsignado: s})} className={`py-1.5 rounded text-[7px] border font-black uppercase ${datosVenta.domiciliarioAsignado===s?'bg-cyan-600 text-white border-cyan-600 shadow-md':'border-white/5 text-slate-500'}`}>{s}</button>)}</div>
+                                                <input type="number" value={datosVenta.valorDomicilio} onChange={e=>setDatosVenta({...datosVenta, valorDomicilio:e.target.value})} placeholder="VALOR DOMICILIO $" className="w-full p-2.5 bg-black/50 border border-white/10 rounded-lg text-xs text-cyber-green font-black placeholder:text-cyber-green/30 placeholder:drop-shadow-md shadow-inner" />
+                                            </div>
+                                        )}
+                                        {datosVenta.entidad === 'Cliente' && (
+                                            <div className="flex justify-between items-center text-[9px] font-black uppercase pt-2 border-t border-white/5"><span>DESCUENTO:</span><button type="button" onClick={()=>setDatosVenta({...datosVenta, aplicarDescuento: !datosVenta.aplicarDescuento})} className={`w-9 h-4 rounded-full relative transition-all ${datosVenta.aplicarDescuento?'bg-space-orange':'bg-slate-800'}`}><div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${datosVenta.aplicarDescuento?'right-0.5':'left-0.5'}`}></div></button></div>
+                                        )}
+                                        {datosVenta.aplicarDescuento && <input type="number" value={datosVenta.valorDescuento} onChange={e=>setDatosVenta({...datosVenta, valorDescuento:e.target.value})} placeholder="TOTAL DESCUENTO $" className="w-full p-2.5 bg-black/60 border border-white/10 rounded-lg text-xs text-space-purple font-black outline-none placeholder:text-space-purple/40 placeholder:drop-shadow-md shadow-inner" />}
+                                    </div>
+
+                                    <div className="p-4 bg-black/30 rounded-2xl border border-white/5 space-y-3">
+                                        <p className="text-[8px] font-black uppercase text-space-purple tracking-widest italic">Cuenta de Ingreso:</p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {['CRIS', 'JHION'].map(cta => (<button key={cta} type="button" onClick={() => setDatosVenta({...datosVenta, cuentaDestino: cta})} className={`py-2 rounded-lg text-[9px] font-black border transition-all ${datosVenta.cuentaDestino === cta ? 'bg-cyber-green text-black border-cyber-green shadow-md' : 'border-white/5 text-slate-500'}`}>{cta}</button>))}
+                                        </div>
+                                    </div>
+
+                                    <div className="p-4 bg-black/40 rounded-2xl border border-white/10 space-y-4">
+                                        <div className="grid grid-cols-2 gap-1.5">
+                                            {['Efectivo', 'Transferencia', 'Datáfono', 'Crédito', 'Cruce', 'Artículo en Garantía'].map(m => (<button key={m} type="button" onClick={()=>setMetodoActual({...metodoActual, metodo: m})} className={`py-2 rounded-lg text-[8px] font-black uppercase border transition-all ${metodoActual.metodo === m ? 'bg-space-purple text-white border-space-purple shadow-md' : 'border-white/5 text-slate-600 hover:text-white'}`}>{m}</button>))}
+                                        </div>
+                                        {['Crédito', 'Cruce', 'Artículo en Garantía'].includes(metodoActual.metodo) && (
+                                            <div className="p-3 bg-hades-gold/5 border border-hades-gold/20 rounded-xl space-y-3 animate-in slide-in-from-top-2">
+                                                <input type="date" value={metodoActual.fechaPago} onChange={e=>setMetodoActual({...metodoActual, fechaPago: e.target.value})} className="w-full p-2 bg-black/60 border border-white/10 rounded-lg text-xs text-white outline-none" />
+                                                <textarea value={metodoActual.comentario} onChange={e=>setMetodoActual({...metodoActual, comentario: e.target.value})} placeholder="COMENTARIOS / PENDIENTES..." className="w-full p-2 bg-black/60 border border-white/10 rounded-lg text-[10px] text-white outline-none h-16 resize-none"></textarea>
+                                            </div>
+                                        )}
+                                        <div className="flex gap-2">
+                                            <input type="number" value={metodoActual.monto} onChange={e=>setMetodoActual({...metodoActual, monto:e.target.value})} placeholder="MONTO $" className="flex-1 bg-black/60 p-2.5 rounded-lg text-xs font-black text-cyber-green border border-white/5 outline-none" />
+                                            <button type="button" onClick={() => { if(!metodoActual.monto) return; setPagos([...pagos, {...metodoActual, id: Date.now()}]); setMetodoActual({metodo:'Efectivo', monto:'', fechaPago:'', comentario:''}); }} className="p-2.5 bg-space-orange text-white rounded-lg hover:scale-105 shadow-lg"><i data-lucide="plus"></i></button>
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5">{pagos.map(p => <span key={p.id} className="text-[7px] px-2 py-1 rounded bg-white/5 border border-white/10 font-black uppercase flex items-center gap-1.5">{p.metodo}: ${parseFloat(p.monto).toLocaleString()} <button type="button" onClick={()=>setPagos(pagos.filter(x=>x.id!==p.id))} className="text-red-500">x</button></span>)}</div>
+                                    </div>
+
+                                    <form onSubmit={registrarOActualizarDespacho} className="space-y-4">
+                                        <div className="space-y-1">
+                                            <label className="text-[8px] font-black uppercase text-space-purple tracking-widest block ml-1">Uplink de Operador (Bloqueado):</label>
+                                            <input type="text" value={user ? user.email : 'SIN AUTENTICAR'} readOnly className="w-full p-4 bg-black/60 rounded-xl text-[10px] border border-white/10 font-bold uppercase text-slate-400 cursor-not-allowed shadow-inner outline-none" required />
+                                        </div>
+                                        <div className="bg-black/90 p-5 rounded-2xl border-2 border-space-purple/30 flex justify-between items-center shadow-2xl">
+                                            <div><p className="text-[7px] font-black uppercase opacity-40 italic">Abonado:</p><p className={`text-xs font-black ${totalAbonado >= totalOp ? 'text-cyber-green' : 'text-red-500'}`}>${totalAbonado.toLocaleString()}</p></div>
+                                            <div className="text-right"><p className="text-[8px] font-black uppercase text-space-purple tracking-widest font-mono">TOTAL:</p><p className="text-3xl font-black italic text-white">${totalOp.toLocaleString()}</p></div>
+                                        </div>
+                                        <button type="submit" disabled={carrito.length === 0} className="btn-primary-nasa italic uppercase font-black text-white">
+                                            {editingVentaId ? "GUARDAR CAMBIOS" : "¡REGISTRAR!"}
+                                        </button>
+                                    </form>
+                                    
+                                    <div className="pt-4 border-t border-white/5 space-y-3">
+                                        <p className="text-[8px] font-black uppercase text-cyber-green italic text-center">Registro Masivo de Despachos</p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <input type="file" ref={fileDespRef} onChange={(e) => uploadExcel(e, 'DESPACHOS')} className="hidden" accept=".xlsx, .xls, .csv" />
+                                            <button onClick={() => fileDespRef.current.click()} disabled={isSyncing} className="py-2.5 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">Sincronizar Log</button>
+                                            <button onClick={() => downloadTemplate('DESPACHOS')} className="py-2.5 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">Plantilla Smart</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="lg:col-span-7 h-[1100px] flex flex-col text-white">
+                                <div className="glass-panel h-full flex flex-col overflow-hidden border-white/5">
+                                    <div className="p-5 bg-white/5 font-black uppercase text-[10px] flex justify-between border-b border-white/5"><span>Log Operativo Real-Time</span><div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div></div>
+                                    <div className="overflow-x-auto flex-1 table-container">
+                                        <table className="w-full text-left text-[9px] text-white">
+                                            <thead className="bg-[#101018] text-slate-500 uppercase font-black sticky top-0"><tr><th className="p-5 py-4">TimeStamp</th><th className="p-5 py-4">Sujeto</th><th className="p-5 py-4 text-center">Total</th><th className="p-5 py-4 text-right">Acción</th></tr></thead>
+                                            <tbody className="divide-y divide-white/5">
+                                                {decryptedVentas.map(v => {
+                                                    const tienePendiente = v.estado !== 'Pagado' && (v.pagos && v.pagos.some(p => ['Crédito', 'Cruce', 'Artículo en Garantía'].includes(p.metodo)));
+                                                    return (
+                                                        <tr key={v.id} className="hover:bg-white/5 transition-all border-l-4 border-l-transparent hover:border-l-space-purple">
+                                                            <td className="p-5 opacity-40 uppercase font-black text-[8px] leading-tight">
+                                                                {v.hora}<br/>{v.fecha}<br/><span className="text-space-orange font-bold">{v.canal}</span><br/><span className="text-[#39ff14] font-black">CTA: {v.cuentaDestino || 'CRIS'}</span><br/><span className="text-space-purple font-extrabold block mt-1 truncate max-w-[100px]" title={v.responsable}>OP: {v.responsable ? v.responsable.split('@')[0] : 'Admin'}</span>
+                                                            </td>
+                                                            <td className="p-5 font-black uppercase truncate max-w-[140px]">{v.nombreEntidad}</td>
+                                                            <td className="p-5 text-center font-black text-cyber-green italic text-sm">${(v.totalVenta || 0).toLocaleString()}</td>
+                                                            <td className="p-5 text-right flex justify-end gap-2 items-center">
+                                                                {tienePendiente && (<button onClick={() => setSaldarModal({ show: true, venta: v, nuevoMetodo: 'Efectivo', montoEfectivo: v.totalVenta || 0, fechaEfectiva: new Date().toISOString().split('T')[0], observacionCierre: 'Abono Realizado' })} className="px-2 py-1 bg-hades-gold/20 text-hades-gold border border-hades-gold/30 rounded text-[7px] font-black uppercase hover:bg-hades-gold hover:text-black transition-all">Saldar</button>)}
+                                                                <button onClick={() => iniciarEdicionDespacho(v)} className="text-blue-400 hover:text-blue-300 hover:scale-125 transition-all p-1" title="Modificar Despacho"><i data-lucide="edit-3" className="w-3.5 h-3.5"></i></button>
+                                                                <button onClick={async ()=>{ if(confirm('¿Anular?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ventas', v.id)); }} className="text-red-500 hover:scale-125 transition-transform p-1"><i data-lucide="trash-2" className="w-3.5 h-3.5"></i></button>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : view === 'inventario' ? (
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-500 text-white">
+                            <div className="lg:col-span-4 space-y-6 text-white">
+                                <div className="glass-panel p-6 border-space-orange/30 shadow-xl">
+                                    <h2 className="text-[10px] font-black mb-6 uppercase text-space-orange italic border-l-4 border-space-purple pl-3">{newProduct.id ? 'MODIFICAR PRODUCTO' : 'INGRESAR A INVENTARIO'}</h2>
+                                    <form onSubmit={upsertProd} className="space-y-4">
+                                        <div className="grid grid-cols-3 gap-1.5 p-1 bg-black/50 rounded-xl border border-white/5 shadow-inner">
+                                            {['Producto Final', 'Insumo', 'Empaque'].map(cat => (<button key={cat} type="button" onClick={() => handleCategoryChange(cat)} className={`py-2 rounded-lg text-[7px] font-black transition-all ${newProduct.categoria === cat ? 'bg-white text-black shadow-lg' : 'text-slate-600 hover:text-white'}`}>{cat.toUpperCase()}</button>))}
+                                        </div>
+                                        <div className="relative">
+                                            <input list="mSkus" value={newProduct.sku} onChange={e=>setNewProduct({...newProduct, sku:e.target.value})} placeholder="SKU (AUTO-CONSECUTIVO)" className="w-full p-3 bg-black/60 rounded-xl text-xs border border-white/10 text-white font-bold uppercase focus:border-white shadow-inner" />
+                                            <datalist id="mSkus">{inventarioActualizado.map(p => <option key={p.id} value={p.sku}>{p.nombre}</option>)}</datalist>
+                                        </div>
+                                        
+                                        <input value={newProduct.nombre} onChange={e => handleNewProductNameChange(e.target.value)} placeholder="PRODUCTO" className="w-full p-3 bg-black/60 rounded-xl text-xs border border-white/10 font-black uppercase focus:border-white text-white shadow-inner" required />
+                                        
+                                        <div className="space-y-2 bg-white/5 p-4 rounded-2xl border border-white/10 shadow-inner">
+                                            <input type="number" value={newProduct.precioCosto} onChange={e=>setNewProduct({...newProduct, precioCosto:e.target.value})} placeholder="VALOR EQUIVALENTE (COSTO) $" className="w-full bg-black/60 p-2.5 rounded-lg text-xs font-black border border-white/5 text-cyber-green outline-none placeholder:text-cyber-green/30 placeholder:drop-shadow-md" required />
+                                            {newProduct.categoria !== 'Empaque' && (<input type="number" value={newProduct.precioCliente} onChange={e=>setNewProduct({...newProduct, precioCliente:e.target.value})} placeholder="VALOR EQUIVALENTE (CLIENTE) $" className="w-full bg-black/60 p-2.5 rounded-lg text-xs font-black border border-white/5 text-white outline-none focus:border-white placeholder:text-white/30 placeholder:drop-shadow-md shadow-inner" required />)}
+                                            <input type="number" value={newProduct.precioSocio} onChange={e=>setNewProduct({...newProduct, precioSocio:e.target.value})} placeholder="VALOR EQUIVALENTE (SOCIOS) $" className="w-full bg-black/60 p-2.5 rounded-lg text-xs font-black border border-white/5 text-white outline-none focus:border-white placeholder:text-white/30 placeholder:drop-shadow-md shadow-inner" required />
+                                        </div>
+                                        <input type="number" value={newProduct.stockInicial} onChange={e=>setNewProduct({...newProduct, stockInicial:e.target.value})} placeholder="CANTIDAD A INGRESAR" className="w-full bg-black/60 p-3.5 rounded-xl text-xs font-black border border-white/10 text-white shadow-inner" required />
+                                        <button type="submit" className="w-full bg-space-orange text-white font-black py-4 rounded-xl shadow-xl hover:scale-105 active:scale-95 transition-all text-[10px] tracking-widest italic uppercase">{newProduct.id ? 'ACTUALIZAR DATOS' : 'ACTUALIZAR STOCK'}</button>
+                                        {newProduct.id && (<button type="button" onClick={() => setNewProduct({ id: null, sku: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' })} className="w-full mt-2 bg-slate-800 text-white font-black py-2.5 rounded-xl uppercase text-[10px] tracking-widest border border-white/10 hover:bg-slate-700 italic">Cancelar Edición</button>)}
+                                    </form>
+                                </div>
+                                <div className="glass-panel p-6 border-cyber-green/30 text-center space-y-4">
+                                    <h3 className="text-[10px] font-black uppercase text-cyber-green italic tracking-widest flex items-center justify-center gap-2"><i data-lucide="upload-cloud"></i> CONCILIAR INVENTARIO</h3>
+                                    <input type="file" ref={fileInvRef} onChange={(e) => uploadExcel(e, 'INVENTARIO')} className="hidden" accept=".xlsx, .xls, .csv" />
+                                    <div className="grid grid-cols-2 gap-2 text-white">
+                                        <button onClick={() => fileInvRef.current.click()} disabled={isSyncing} className="py-3 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">Subir y Sincronizar</button>
+                                        <button onClick={exportarPlantilla} className="py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">Plantilla Smart</button>
+                                    </div>
+                                </div>
+                                
+                                <div className="pt-4 border-t border-cyber-green/30 mt-4">
+                                    <h3 className="text-[10px] font-black uppercase text-red-500 italic tracking-widest flex items-center justify-center gap-2 mb-3"><i data-lucide="alert-triangle"></i> ZONA DE RIESGO</h3>
+                                    <button onClick={eliminarTodoElInventario} disabled={isSyncing} className="w-full py-3 bg-red-500/10 border border-red-500/40 rounded-xl font-black uppercase text-[9px] text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-lg">Vaciar Todo El Inventario</button>
+                                </div>
+                            </div>
+                            <div className="lg:col-span-8 space-y-6 h-[850px] overflow-y-auto pr-2 table-container">
+                                {['Producto Final', 'Insumo', 'Empaque'].map(cat => (
+                                    <div key={cat} className="glass-panel overflow-hidden border-white/5 mb-6 shadow-xl text-white">
+                                        <div className="p-4 bg-white/5 font-black uppercase text-[10px] border-b border-white/5 flex justify-between text-white"><span>Master Feed: {cat}</span><span className="text-space-purple opacity-40 font-mono">{inventarioActualizado.filter(p=>p.categoria===cat).length} Items</span></div>
+                                        <div className="overflow-x-auto flex-1">
+                                            <table className="w-full text-left text-xs text-white">
+                                                <thead className="bg-black/50 text-space-orange uppercase font-black text-[9px]"><tr><th className="p-4 text-white">SKU</th><th className="p-4 text-white">Nombre</th><th className="p-4 text-center text-white">Stock</th><th className="p-4 text-right text-white">ELIMINAR</th></tr></thead>
+                                                <tbody className="divide-y divide-white/5">
+                                                    {inventarioActualizado.filter(p => p.categoria === cat).map(p => (
+                                                        <tr key={p.id} className="hover:bg-white/5 transition-all text-white">
+                                                            <td className="p-4 font-mono text-space-purple text-[10px] font-bold">{p.sku}</td>
+                                                            <td className="p-4 italic text-white text-[10px] truncate max-w-[200px] uppercase">{p.nombre}</td>
+                                                            <td className={`p-4 text-center font-black ${p.stockActual<10?'text-red-500 animate-pulse':'text-cyber-green'}`}>{p.stockActual}</td>
+                                                            <td className="p-4 text-right flex justify-end gap-2 text-white">
+                                                                <button onClick={()=>setNewProduct({id:p.id, sku:p.sku, nombre:p.nombre, precioCosto:p.precioCosto, precioCliente:p.precioCliente, precioSocio:p.precioSocio, stockInicial:p.stockActual, categoria:p.categoria})} className="text-blue-400 hover:scale-125 transition-all p-1"><i data-lucide="edit-3"></i></button>
+                                                                <button onClick={async ()=>{ if(confirm('¿Eliminar?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'productos', p.id)); }} className="text-red-500 hover:scale-125 transition-all p-1"><i data-lucide="trash-2"></i></button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-500 text-white">
+                            <div className="lg:col-span-4 glass-panel p-8 border-white/10 shadow-2xl">
+                                <h2 className="text-lg font-black mb-8 italic uppercase border-l-4 border-white pl-4 text-white tracking-widest">{newSujeto.id ? 'MODIFICAR SUJETO' : 'Directorio Maestro'}</h2>
+                                <form onSubmit={async (e)=>{ e.preventDefault(); if(newSujeto.id) { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', newSujeto.id), { nombre: encryptVal(newSujeto.nombre.toUpperCase(), vaultKey), tipo: newSujeto.tipo, telefono: encryptVal(newSujeto.telefono, vaultKey) }); } else { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), { nombre: encryptVal(newSujeto.nombre.toUpperCase(), vaultKey), tipo: newSujeto.tipo, telefono: encryptVal(newSujeto.telefono, vaultKey), timestamp: Date.now() }); } setNewSujeto({id:null, nombre:'', tipo:'Cliente', telefono:''}); mostrarNotificacion("Directorio Sincronizado."); }} className="space-y-6"><div className="grid grid-cols-3 gap-1.5 p-1.5 bg-black/40 rounded-xl border border-white/10 shadow-inner">{['Cliente', 'Proveedor', 'Distribuidor'].map(t => <button key={t} type="button" onClick={()=>setNewSujeto({...newSujeto, tipo:t})} className={`py-3 rounded-lg text-[8px] font-black uppercase transition-all ${newSujeto.tipo===t?'bg-white text-black shadow-xl':'text-slate-600'}`}>{t}</button>)}</div><input value={newSujeto.nombre} onChange={e=>setNewSujeto({...newSujeto, nombre:e.target.value})} placeholder="NOMBRE / ENTIDAD" className="w-full p-4 bg-black/60 rounded-xl text-xs font-black border border-white/5 outline-none uppercase" required /><input value={newSujeto.telefono} onChange={e=>setNewSujeto({...newSujeto, telefono:e.target.value})} placeholder="TELÉFONO / UPLINK" className="w-full p-4 bg-[#1a1a24] rounded-xl text-xs font-black border border-white/5 outline-none shadow-inner" /><button type="submit" className="w-full bg-white text-black font-black py-4 rounded-xl uppercase text-xs tracking-widest italic font-black">REGISTRAR SUJETO</button>{newSujeto.id && (<button type="button" onClick={() => setNewSujeto({ id: null, nombre: '', tipo: 'Cliente', telefono: '' })} className="w-full mt-2 bg-slate-800 text-white font-black py-2.5 rounded-xl uppercase text-[10px] border border-white/10 hover:bg-slate-700 italic">Cancelar</button>)}</form>
+                                <div className="mt-8 pt-8 border-t border-white/5 space-y-4"><h3 className="text-[10px] font-black uppercase text-cyber-green italic text-center tracking-widest">CONCILIAR DIRECTORIO</h3><input type="file" ref={fileSujRef} onChange={(e) => uploadExcel(e, 'SUJETOS')} className="hidden" accept=".xlsx, .xls, .csv" /><div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => { if(fileSujRef.current) fileSujRef.current.click(); }} className="py-3 bg-cyber-green/10 border border-cyber-green/40 rounded-xl font-black uppercase text-[8px] text-cyber-green hover:bg-cyber-green hover:text-black transition-all">Subir y Sincronizar</button><button onClick={() => downloadTemplate('SUJETOS')} className="py-3 bg-white/5 border border-white/10 rounded-xl font-black uppercase text-[8px] text-white hover:bg-white/10 transition-all">Plantilla Smart</button></div></div>
+                            </div>
+                            <div className="lg:col-span-8 glass-panel overflow-hidden h-[800px] flex flex-col border-white/5 text-white shadow-xl"><div className="p-6 bg-white/5 font-black uppercase text-[10px] border-b border-white/5 flex justify-between items-center"><span>Base de Datos Aliados</span><span className="opacity-40 italic font-mono">{sujetos.length} Registros</span></div><div className="overflow-x-auto flex-1 table-container"><table className="w-full text-left text-xs"><thead className="bg-[#101018] text-slate-500 uppercase font-black sticky top-0"><tr><th className="p-6 py-4 text-white">Tipo</th><th className="p-6 py-4 text-white font-white">Nombre de Entidad</th><th className="p-6 py-4 text-right text-white">ELIMINAR</th></tr></thead><tbody className="divide-y divide-white/5">{decryptedSujetos.map(s => (<tr key={s.id} className="hover:bg-white/10 font-black uppercase italic transition-all group border-l-4 border-l-transparent hover:border-l-space-purple"><td className="p-6"><span className={`px-3 py-1 rounded-md text-[7px] font-black border ${s.tipo==='Cliente'?'text-cyber-green border-cyber-green/30':s.tipo==='Proveedor'?'text-space-orange border-space-orange/30':'text-space-purple border-space-purple/30'}`}>{s.tipo}</span></td><td className="p-6 text-[11px] font-bold uppercase">{s.nombre}</td><td className="p-6 text-right flex justify-end gap-3 opacity-30 group-hover:opacity-100"><button onClick={()=>setNewSujeto({id:s.id, nombre:s.nombre, tipo:s.tipo, telefono:s.telefono})} className="text-blue-400 hover:scale-125 transition-all p-1"><i data-lucide="edit-3"></i></button><button onClick={async ()=>{ if(confirm('¿Anular?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'sujetos', s.id)); }} className="text-red-500 hover:scale-125 transition-all p-1"><i data-lucide="trash-2"></i></button></td></tr>))}</tbody></table></div></div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+        
+        onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), () => {
+             setTimeout(() => { if(window.lucide) lucide.createIcons(); }, 500);
+        });
+    </script>
 </body>
 </html>
