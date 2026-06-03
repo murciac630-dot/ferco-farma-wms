@@ -111,6 +111,7 @@
         const { useState, useEffect, useMemo, useRef } = React;
         const ReactApexChart = window.ReactApexCharts ? (window.ReactApexCharts.default || window.ReactApexCharts) : null;
 
+        // --- ENCRIPTACIÓN simétrica (AES-256) ---
         const encryptVal = (val, key) => {
             if (val === undefined || val === null || val === '') return '';
             return CryptoJS.AES.encrypt(String(val), key).toString();
@@ -142,6 +143,8 @@
             const [productos, setProductos] = useState([]);
             const [ventas, setVentas] = useState([]);
             const [sujetos, setSujetos] = useState([]);
+            // NUEVO: Estado para almacenar los datos encriptados de Firebase
+            const [movimientosCaja, setMovimientosCaja] = useState([]);
             const [view, setView] = useState('dashboard');
             const [loading, setLoading] = useState(true);
             const [isSyncing, setIsSyncing] = useState(false);
@@ -182,8 +185,10 @@
 
             const [newProduct, setNewProduct] = useState({ id: null, sku: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
             const [newSujeto, setNewSujeto] = useState({ id: null, nombre: '', tipo: 'Cliente', telefono: '' });
+            
+            // NUEVO: Estado del formulario de Caja Menor
+            const [newMovCaja, setNewMovCaja] = useState({ tipo: 'Egreso', concepto: '', valor: '' });
 
-            // --- CORRECCIÓN: Actualización de la lista de domiciliarios ---
             const staffDomi = ['Pipe', 'Havith', 'Valentino Rossi', 'Mono', 'Cris', 'JF', 'Delivery App'];
 
             useEffect(() => {
@@ -205,12 +210,15 @@
                 const unsubProd = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), (s) => setProductos(s.docs.map(d => ({ id: d.id, ...d.data() }))));
                 const unsubVentas = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), (s) => setVentas(s.docs.map(d => ({ id: d.id, ...d.data() }))));
                 const unsubSujetos = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), (s) => setSujetos(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+                // NUEVO: Escuchador en tiempo real de Caja Menor
+                const unsubCaja = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'movimientos_caja'), (s) => setMovimientosCaja(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+                
                 const unsubVaultAuth = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'vault_control'), (snap) => {
                     const docAuth = snap.docs.find(d => d.id === 'auth');
                     if (docAuth) setVaultAuthDoc({ id: docAuth.id, ...docAuth.data() });
                     else setVaultAuthDoc(null);
                 });
-                return () => { unsubProd(); unsubVentas(); unsubSujetos(); unsubVaultAuth(); };
+                return () => { unsubProd(); unsubVentas(); unsubSujetos(); unsubCaja(); unsubVaultAuth(); };
             }, [user]);
 
             const mostrarNotificacion = (mensaje, tipo = 'success') => {
@@ -280,6 +288,21 @@
                 }));
             }, [sujetos, isVaultLocked, vaultKey]);
 
+            // NUEVO: Desencriptador del Log de Caja Menor
+            const decryptedCaja = useMemo(() => {
+                if (isVaultLocked || !vaultKey) return [];
+                return movimientosCaja.map(m => ({
+                    id: m.id,
+                    tipo: m.tipo, // 'Ingreso' o 'Egreso' se guarda en plano por ser logica base
+                    concepto: decryptVal(m.concepto, vaultKey),
+                    valor: decryptVal(m.valor, vaultKey, true),
+                    responsable: decryptVal(m.responsable, vaultKey),
+                    timestamp: m.timestamp,
+                    fecha: m.fecha,
+                    hora: m.hora
+                })).sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
+            }, [movimientosCaja, isVaultLocked, vaultKey]);
+
             const inventarioActualizado = useMemo(() => {
                 return [...decryptedProductos].sort((a, b) => {
                     const numA = parseInt(a.sku?.match(/\d+/)?.[0] || 0, 10);
@@ -312,20 +335,13 @@
                 
                 carrito.forEach(it => {
                     const p = inventarioActualizado.find(x => x.id === it.productoId);
-                    
-                    // precioSocio es el precio al que Ferco Farma le vende a Hades (ej. 18.000)
                     const costoSocioTotal = (p?.precioSocio || 0) * parseFloat(it.cantidad) * it.fraccion;
-                    
-                    // valorUnitario es lo que el operador digitó que le cobró al cliente final (ej. 30.000)
                     const ventaTotalHades = parseFloat(it.valorUnitario) * parseFloat(it.cantidad) * it.fraccion;
                     
                     if (it.descontarStock !== false) {
-                        // Ferco Farma recoge su costo de distribuidor (18.000)
                         fercoShare += costoSocioTotal;
-                        // Hades se queda con el sobrante de la venta al cliente (30.000 - 18.000 = 12.000)
                         hadesShare += (ventaTotalHades - costoSocioTotal);
                     } else {
-                        // Si no sale de bodega, Hades se queda con todo
                         hadesShare += ventaTotalHades;
                     }
                 });
@@ -345,6 +361,17 @@
                 const valorBodega = inventarioActualizado.reduce((s,p) => s + ((parseFloat(p.stockActual) || 0) * (parseFloat(p.precioCosto) || 0)), 0);
                 return { ...res, valorBodega, bajos: inventarioActualizado.filter(p => p.stockActual < 10).length };
             }, [decryptedVentas, inventarioActualizado]);
+
+            // NUEVO: Cálculos matemáticos exclusivos de la Caja Menor
+            const cajaMetrics = useMemo(() => {
+                return decryptedCaja.reduce((acc, m) => {
+                    const val = parseFloat(m.valor) || 0;
+                    if (m.tipo === 'Ingreso') acc.ingresos += val;
+                    else acc.egresos += val;
+                    acc.balance = acc.ingresos - acc.egresos;
+                    return acc;
+                }, { ingresos: 0, egresos: 0, balance: 0 });
+            }, [decryptedCaja]);
 
             const rankingClientes = useMemo(() => {
                 const stats = decryptedVentas.filter(v => v.entidad === 'Cliente' && v.nombreEntidad).reduce((acc, v) => {
@@ -586,6 +613,29 @@
                 } catch (error) { mostrarNotificacion("Falla de enlace al intentar eliminar los datos.", "error"); } finally { setIsSyncing(false); }
             };
 
+            // NUEVO: Función para inyectar transacciones a la Caja Menor
+            const registrarMovCaja = async (e) => {
+                e.preventDefault();
+                if (!newMovCaja.concepto || !newMovCaja.valor) return;
+                try {
+                    const ahora = new Date();
+                    const payload = {
+                        tipo: newMovCaja.tipo,
+                        concepto: encryptVal(newMovCaja.concepto.toUpperCase(), vaultKey),
+                        valor: encryptVal(newMovCaja.valor, vaultKey),
+                        responsable: encryptVal(user ? user.email : 'Admin', vaultKey),
+                        timestamp: Date.now(),
+                        fecha: ahora.toLocaleDateString(),
+                        hora: ahora.toLocaleTimeString()
+                    };
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'movimientos_caja'), payload);
+                    setNewMovCaja({ tipo: 'Egreso', concepto: '', valor: '' });
+                    mostrarNotificacion("Movimiento de caja registrado exitosamente.");
+                } catch (err) {
+                    mostrarNotificacion("Error al registrar movimiento en la nube.", "error");
+                }
+            };
+
             const uploadExcel = async (e, type) => {
                 const file = e.target.files[0]; if (!file) return; setIsSyncing(true);
                 const reader = new FileReader();
@@ -700,7 +750,7 @@
                 const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Log"); XLSX.writeFile(wb, `FERCO_FINANCE_REPORT_${Date.now()}.xlsx`);
             };
 
-            useEffect(() => { if (!loading && window.lucide) window.lucide.createIcons(); }, [loading, view, productos, ventas, carrito, datosVenta, sujetos, pagos, metodoActual, newProduct, newSujeto, showProductList, showSubjectList, saldarModal, isVaultLocked, editingVentaId, itemActual]);
+            useEffect(() => { if (!loading && window.lucide) window.lucide.createIcons(); }, [loading, view, productos, ventas, carrito, datosVenta, sujetos, pagos, metodoActual, newProduct, newSujeto, showProductList, showSubjectList, saldarModal, isVaultLocked, editingVentaId, itemActual, movimientosCaja]);
 
             if (loading) return <div className="flex h-screen items-center justify-center bg-[#020206] text-space-purple font-black animate-pulse">Central FERCO FARMA Activo...</div>;
 
@@ -765,11 +815,16 @@
                             <div><h1 className="text-3xl font-black italic tracking-tighter uppercase">FERCO <span className="text-space-orange">FARMA</span></h1><p className="text-[7px] uppercase tracking-[0.5em] font-black text-space-purple opacity-60">REGISTROS DE BODEGA v21.0</p></div>
                         </div>
                         <nav className="flex flex-wrap gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
-                            {['dashboard', 'despacho', 'inventario', 'directorio'].map(v => (<button key={v} onClick={() => setView(v)} className={`px-5 py-2 rounded-lg font-black text-[9px] uppercase transition-all ${view===v?'bg-white text-black shadow-xl':'text-slate-500 hover:text-white'}`}>{v.toUpperCase()}</button>))}
+                            {/* MODIFICADO: Agregada la vista 'caja' al mapa de navegación */}
+                            {['dashboard', 'despacho', 'inventario', 'directorio', 'caja'].map(v => (<button key={v} onClick={() => setView(v)} className={`px-5 py-2 rounded-lg font-black text-[9px] uppercase transition-all ${view===v?'bg-white text-black shadow-xl':'text-slate-500 hover:text-white'}`}>{v.toUpperCase()}</button>))}
                         </nav>
                         <div className="flex gap-2">
-                            <button onClick={handleSignOut} className="px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 font-black text-[9px] uppercase hover:bg-red-500 hover:text-white transition-all"><i data-lucide="lock" className="w-3.5 h-3.5 inline mr-1"></i> Cerrar Sesión</button>
-                            <button onClick={exportarVentas} className="px-5 py-2.5 rounded-lg bg-cyber-green text-black font-black text-[10px] uppercase hover:scale-105 transition-all flex items-center gap-2"><i data-lucide="download-cloud"></i> INFORME</button>
+                            <button onClick={handleSignOut} className="px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 font-black text-[9px] uppercase hover:bg-red-500 hover:text-white transition-all">
+                                <i data-lucide="lock" className="w-3.5 h-3.5 inline mr-1"></i> Cerrar Sesión
+                            </button>
+                            <button onClick={exportarVentas} className="px-5 py-2.5 rounded-lg bg-cyber-green text-black font-black text-[10px] uppercase hover:scale-105 transition-all flex items-center gap-2">
+                                <i data-lucide="download-cloud"></i> INFORME
+                            </button>
                         </div>
                     </header>
 
@@ -853,7 +908,7 @@
 
                                         <div className="grid grid-cols-2 gap-2">
                                             <input type="number" value={itemActual.cantidad} onChange={e=>setItemActual({...itemActual, cantidad:e.target.value})} placeholder="Cantidad" className="bg-black/60 p-3 rounded-xl text-xs border border-white/5 font-black text-white" />
-                                            <input type="number" value={itemActual.valorUnitario} onChange={e=>setItemActual({...itemActual, valorUnitario:e.target.value})} placeholder="VALOR $" className="bg-black/60 p-3 rounded-xl text-xs text-cyber-green font-black border border-white/5 outline-none focus:border-white placeholder:text-cyber-green/30 placeholder:drop-shadow-md shadow-inner" />
+                                            <input type="number" value={itemActual.valorUnitario} onChange={e=>setItemActual({...itemActual, valorUnitario:e.target.value})} placeholder="VALOR EQUIVALENTE $" className="bg-black/60 p-3 rounded-xl text-xs text-cyber-green font-black border border-white/5 outline-none focus:border-white placeholder:text-cyber-green/30 placeholder:drop-shadow-md shadow-inner" />
                                         </div>
 
                                         {datosVenta.canal === 'Hades' && (
@@ -874,7 +929,6 @@
                                         <button type="button" onClick={()=>{ if(!itemActual.productoId || !itemActual.cantidad) return; setCarrito([...carrito, { ...itemActual, idT: Date.now(), subtotal: parseFloat(itemActual.cantidad) * itemActual.fraccion * parseFloat(itemActual.valorUnitario) }]); setItemActual({sku:'', nombre:'', productoId:'', cantidad:1, valorUnitario:0, fraccion: 1, descontarStock: true}); }} className="w-full py-3 bg-space-purple/10 text-space-purple border border-space-purple/30 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-md">AGREGAR A COMPRA</button>
                                     </div>
 
-                                    {/* CORRECCIÓN: Nombres Claros para el Cálculo Financiero */}
                                     {datosVenta.canal === 'Hades' && carrito.length > 0 && (
                                         <div className="p-4 hades-card rounded-2xl space-y-2 animate-in slide-in-from-top-2 shadow-2xl">
                                             <div className="flex justify-between text-[9px] font-black uppercase text-slate-400">
@@ -919,7 +973,7 @@
                                         {datosVenta.entregaDomicilio && (
                                             <div className="space-y-2 animate-in fade-in">
                                                 <div className="grid grid-cols-4 gap-1">{staffDomi.map(s => <button key={s} type="button" onClick={()=>setDatosVenta({...datosVenta, domiciliarioAsignado: s})} className={`py-1.5 rounded text-[7px] border font-black uppercase ${datosVenta.domiciliarioAsignado===s?'bg-cyan-600 text-white border-cyan-600 shadow-md':'border-white/5 text-slate-500'}`}>{s}</button>)}</div>
-                                                <input type="number" value={datosVenta.valorDomicilio} onChange={e=>setDatosVenta({...datosVenta, valorDomicilio:e.target.value})} placeholder="VALOR DOMICILIO $" className="w-full p-2.5 bg-black/50 border border-white/10 rounded-lg text-xs text-cyber-green font-black placeholder:text-cyber-green/30 placeholder:drop-shadow-md shadow-inner" />
+                                                <input type="number" value={datosVenta.valorDomicilio} onChange={e=>setDatosVenta({...datosVenta, valorDomicilio:e.target.value})} placeholder="VALOR EQUIVALENTE (DOMICILIO) $" className="w-full p-2.5 bg-black/50 border border-white/10 rounded-lg text-xs text-cyber-green font-black placeholder:text-cyber-green/30 placeholder:drop-shadow-md shadow-inner" />
                                             </div>
                                         )}
                                         {datosVenta.entidad === 'Cliente' && (
@@ -1071,6 +1125,67 @@
                                         </div>
                                     </div>
                                 ))}
+                            </div>
+                        </div>
+                    ) : view === 'caja' ? (
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-500 text-white">
+                            <div className="lg:col-span-4 space-y-6">
+                                <div className="glass-panel p-8 border-white/10 shadow-2xl">
+                                    <h2 className="text-lg font-black mb-8 italic uppercase border-l-4 border-cyber-green pl-4 text-white tracking-widest">
+                                        Movimiento de Caja
+                                    </h2>
+                                    <form onSubmit={registrarMovCaja} className="space-y-6">
+                                        <div className="flex p-1 bg-black/40 rounded-xl border border-white/10 shadow-inner">
+                                            {['Ingreso', 'Egreso'].map(t => (
+                                                <button key={t} type="button" onClick={()=>setNewMovCaja({...newMovCaja, tipo:t})} className={`flex-1 py-3 rounded-lg text-[10px] font-black uppercase transition-all ${newMovCaja.tipo===t ? (t==='Ingreso' ? 'bg-cyber-green text-black shadow-xl' : 'bg-red-500 text-white shadow-xl') : 'text-slate-600 hover:text-white'}`}>{t}</button>
+                                            ))}
+                                        </div>
+                                        <input value={newMovCaja.concepto} onChange={e=>setNewMovCaja({...newMovCaja, concepto:e.target.value})} placeholder="CONCEPTO (Ej. Gasolina)" className="w-full p-4 bg-black/60 rounded-xl text-xs font-black border border-white/5 outline-none uppercase shadow-inner" required />
+                                        <input type="number" value={newMovCaja.valor} onChange={e=>setNewMovCaja({...newMovCaja, valor:e.target.value})} placeholder="VALOR ($)" className="w-full p-4 bg-black/60 rounded-xl text-xs font-black border border-white/5 outline-none shadow-inner" required />
+                                        <button type="submit" className={`w-full font-black py-4 rounded-xl uppercase text-xs tracking-widest italic shadow-xl hover:scale-105 active:scale-95 transition-all ${newMovCaja.tipo==='Ingreso' ? 'bg-cyber-green text-black' : 'bg-red-500 text-white'}`}>
+                                            Registrar {newMovCaja.tipo}
+                                        </button>
+                                    </form>
+                                </div>
+                                <div className="glass-panel p-6 border-white/5 space-y-4 shadow-xl">
+                                    <h3 className="text-[10px] font-black uppercase text-slate-400 italic border-b border-white/5 pb-2">Balance de Caja Menor</h3>
+                                    <div className="flex justify-between items-center"><span className="text-[10px] font-black uppercase text-cyber-green">Total Ingresos:</span><span className="text-sm font-black text-cyber-green">+${cajaMetrics.ingresos.toLocaleString()}</span></div>
+                                    <div className="flex justify-between items-center"><span className="text-[10px] font-black uppercase text-red-500">Total Egresos:</span><span className="text-sm font-black text-red-500">-${cajaMetrics.egresos.toLocaleString()}</span></div>
+                                    <div className="flex justify-between items-center pt-3 border-t border-white/10"><span className="text-[11px] font-black uppercase text-white">Saldo en Caja:</span><span className={`text-xl font-black italic ${cajaMetrics.balance >= 0 ? 'text-cyber-green' : 'text-red-500'}`}>${cajaMetrics.balance.toLocaleString()}</span></div>
+                                </div>
+                            </div>
+                            <div className="lg:col-span-8 glass-panel overflow-hidden h-[800px] flex flex-col border-white/5 text-white shadow-xl">
+                                <div className="p-6 bg-white/5 font-black uppercase text-[10px] border-b border-white/5 flex justify-between items-center">
+                                    <span>Historial de Movimientos</span>
+                                    <span className="opacity-40 italic font-mono">{decryptedCaja.length} Registros</span>
+                                </div>
+                                <div className="overflow-x-auto flex-1 table-container">
+                                    <table className="w-full text-left text-xs">
+                                        <thead className="bg-[#101018] text-slate-500 uppercase font-black sticky top-0">
+                                            <tr><th className="p-6 py-4 text-white">Fecha/Operador</th><th className="p-6 py-4 text-white">Concepto</th><th className="p-6 py-4 text-right text-white">Valor</th><th className="p-6 py-4 text-right text-white">Acción</th></tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-white/5">
+                                            {decryptedCaja.map(m => (
+                                                <tr key={m.id} className={`hover:bg-white/5 font-black uppercase italic transition-all group border-l-4 border-l-transparent ${m.tipo==='Ingreso' ? 'hover:border-l-cyber-green' : 'hover:border-l-red-500'}`}>
+                                                    <td className="p-6 text-[8px] text-slate-400 opacity-60 leading-tight">
+                                                        {m.fecha} - {m.hora}<br/>
+                                                        <span className="text-space-purple truncate max-w-[100px] inline-block mt-1">OP: {m.responsable ? m.responsable.split('@')[0] : 'Admin'}</span>
+                                                    </td>
+                                                    <td className="p-6 text-[10px] font-bold uppercase">
+                                                        <span className={`px-2 py-0.5 rounded text-[7px] font-black border mr-2 ${m.tipo==='Ingreso' ? 'text-cyber-green border-cyber-green/30 bg-cyber-green/10' : 'text-red-500 border-red-500/30 bg-red-500/10'}`}>{m.tipo}</span>
+                                                        {m.concepto}
+                                                    </td>
+                                                    <td className={`p-6 text-right font-mono text-sm ${m.tipo==='Ingreso' ? 'text-cyber-green' : 'text-red-500'}`}>
+                                                        {m.tipo==='Ingreso' ? '+' : '-'}${parseFloat(m.valor).toLocaleString()}
+                                                    </td>
+                                                    <td className="p-6 text-right flex justify-end opacity-30 group-hover:opacity-100">
+                                                        <button onClick={async ()=>{ if(confirm('¿Seguro que deseas eliminar este movimiento de caja?')) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'movimientos_caja', m.id)); }} className="text-red-500 hover:scale-125 transition-all p-1"><i data-lucide="trash-2"></i></button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     ) : (
