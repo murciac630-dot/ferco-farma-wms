@@ -122,7 +122,8 @@
             if(root) root.innerHTML = `<div style="display:flex;height:100vh;align-items:center;justify-content:center;color:#ff5a5a;font-family:sans-serif;padding:20px;text-align:center;"><div><h2 style="font-size:24px;font-weight:900;margin-bottom:10px;">FALLO DE UPLINK</h2><p>${msg}</p></div></div>`;
         };
 
-        window.addEventListener('firebase-modules-ready', () => {
+        // LA CORRECCIÓN: Encapsulamos toda la app en bootSystem para manejar la Condición de Carrera
+        const bootSystem = () => {
             try {
                 // Importamos las funciones nativas desde nuestro puente
                 const { initializeApp, getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, query, updateDoc, writeBatch, getDocs } = window.FirebaseNativeModules;
@@ -1318,7 +1319,14 @@
             } catch (e) {
                 renderError(e.message);
             }
-        });
+        };
+
+        // Escudo contra "Condición de Carrera" (Race Condition)
+        if (window.FirebaseNativeModules) {
+            bootSystem(); // Si Firebase cargó antes que Babel, arranca inmediatamente
+        } else {
+            window.addEventListener('firebase-modules-ready', bootSystem); // Si Babel cargó primero, espera el aviso
+        }
 
         // En caso de que el evento no dispare (ej. bloqueadores de red severos), mostramos el fallo
         setTimeout(() => {
