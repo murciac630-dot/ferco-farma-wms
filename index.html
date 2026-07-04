@@ -115,7 +115,8 @@
 
     <!-- PASO 2: Motor React Puro (Sin type="module" conflictivo) -->
     <script type="text/babel">
-        window.addEventListener('firebase-listo', () => {
+        // Lógica encapsulada para poder llamarla ya sea de inmediato o por evento
+        const iniciarAplicacion = () => {
             try {
                 // Recuperamos las herramientas de la memoria
                 const { initializeApp, getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, query, updateDoc, writeBatch, getDocs } = window.FercoFirebase;
@@ -1313,9 +1314,18 @@
                     root.innerHTML = `<div style="display:flex;height:100vh;align-items:center;justify-content:center;color:#ff5a5a;font-family:sans-serif;padding:20px;text-align:center;background:#020206;"><div><h2 style="font-size:24px;font-weight:900;margin-bottom:10px;">FALLO CRÍTICO DE SISTEMA</h2><p style="color:#9b8ec2;font-family:monospace;font-size:12px;">${e.message}</p></div></div>`;
                 }
             }
-        });
+        };
 
-        // En caso de que el evento no dispare (ej. bloqueadores de red severos), mostramos el fallo
+        // Nueva lógica de arranque seguro (Anti-Condición de Carrera)
+        if (window.FercoFirebase) {
+            // Si Firebase cargó súper rápido, arranca directo
+            iniciarAplicacion();
+        } else {
+            // Si Firebase todavía viene en camino, ponte a escuchar
+            window.addEventListener('firebase-listo', iniciarAplicacion);
+        }
+
+        // En caso de que el evento nunca dispare por bloqueadores severos
         setTimeout(() => {
             if (!window.FercoFirebase) {
                 const root = document.getElementById('root');
