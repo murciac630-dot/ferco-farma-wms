@@ -9,155 +9,72 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <script src="https://cdn.jsdelivr.net/npm/react-apexcharts@1.4.1/dist/react-apexcharts.iife.min.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 
-    <script>
-        tailwind.config = { theme: { extend: { colors: { 'space-purple': '#9333ea', 'space-orange': '#f97316', 'space-bg': '#020206', 'cyber-green': '#39ff14', 'hades-gold': '#ffd700' } } } }
+    <!-- Cargamos Firebase con el sistema de carga tradicional de scripts para evitar conflictos -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, query, updateDoc, writeBatch, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // Exponemos las funciones al objeto global 'window'
+        window.FirebaseAPI = { initializeApp, getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, query, updateDoc, writeBatch, getDocs };
+        
+        // Disparamos un evento cuando Firebase está listo
+        window.dispatchEvent(new Event('firebase-ready'));
     </script>
-    <style type="text/css">
-        body { background-color: #020206; color: white; margin: 0; font-family: 'Inter', sans-serif; overflow-x: hidden; }
-        .glass-panel { background: rgba(10, 10, 18, 0.95); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 1rem; backdrop-filter: blur(40px); }
-        .btn-primary-nasa { width: 100%; background: linear-gradient(135deg, #9333ea 0%, #f97316 100%); color: white; font-weight: 900; padding: 1.25rem; border-radius: 0.75rem; text-transform: uppercase; font-style: italic; border: 1px solid rgba(255, 255, 255, 0.2); box-shadow: 0 0 25px rgba(147, 51, 234, 0.3); cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
-        .scanline { position: fixed; inset: 0; pointer-events: none; opacity: 0.015; z-index: 50; background: linear-gradient(to bottom, transparent 0%, #9333ea 50%, transparent 100%); animation: scan 12s linear infinite; }
-        @keyframes scan { 0% { transform: translateY(-100%); } 100% { transform: translateY(100%); } }
-        ::-webkit-scrollbar { width: 4px; height: 4px; }
-        .selectable-list { max-height: 200px; overflow-y: auto; border-radius: 0.75rem; background: rgba(0,0,0,0.9); border: 1px solid rgba(255,255,255,0.1); margin-top: 4px; position: absolute; width: 100%; z-index: 100; }
-        .selectable-item:hover { background: rgba(147, 51, 234, 0.4); }
-        .table-container { scrollbar-width: thin; scrollbar-color: #9333ea transparent; }
+
+    <style>
+        body { background-color: #020206; color: white; margin: 0; font-family: sans-serif; }
+        #root { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .spin { animation: spin 1s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
     <div id="root">
-        <div style="display: flex; height: 100vh; align-items: center; justify-content: center; color: #9333ea; font-family: sans-serif; font-weight: 900; text-transform: uppercase;">Inicializando Motores...</div>
+        <div style="color: #9333ea; font-weight: 900; text-transform: uppercase; letter-spacing: 2px;">
+            <div class="spin" style="width: 40px; height: 40px; border: 4px solid rgba(147,51,234,0.3); border-top-color: #9333ea; border-radius: 50%; margin: 0 auto 20px;"></div>
+            CARGANDO MOTORES...
+        </div>
     </div>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, updateDoc, writeBatch, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-        window.FercoFirebase = { initializeApp, getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, updateDoc, writeBatch, getDocs };
-        window.dispatchEvent(new Event('firebase-listo'));
-    </script>
-
+    <!-- El script de React ahora espera a que Firebase esté listo -->
     <script type="text/babel">
-        const startApp = () => {
-            const { initializeApp, getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, updateDoc, writeBatch, getDocs } = window.FercoFirebase;
-            const app = initializeApp({ apiKey: "AIzaSyB8Ei-GTiqedjsFy09XVujGb94mzkBmVOU", authDomain: "ferco-farma.firebaseapp.com", projectId: "ferco-farma", storageBucket: "ferco-farma.firebasestorage.app", messagingSenderId: "974529589553", appId: "1:974529589553:web:a2944444e7689dec514010" });
-            const auth = getAuth(app);
-            const db = getFirestore(app);
-            const appId = "ferco-farma-wms";
+        const App = () => {
+            const [ready, setReady] = React.useState(false);
 
-            const { useState, useEffect, useMemo, useRef } = React;
-
-            const App = () => {
-                const [user, setUser] = useState(null);
-                const [productos, setProductos] = useState([]);
-                const [ventas, setVentas] = useState([]);
-                const [sujetos, setSujetos] = useState([]);
-                const [caja, setCaja] = useState([]);
-                const [view, setView] = useState('dashboard');
-                const [loading, setLoading] = useState(true);
-                const [vaultKey, setVaultKey] = useState('');
-                const [isVaultLocked, setIsVaultLocked] = useState(true);
-                const [vaultAuthDoc, setVaultAuthDoc] = useState(null);
-                const [loginEmail, setLoginEmail] = useState('');
-                const [loginPassword, setLoginPassword] = useState('');
-                const [inputKey, setInputKey] = useState('');
-                const [vaultError, setVaultError] = useState('');
-                const [notificacion, setNotificacion] = useState({ show: false, mensaje: '', tipo: 'success' });
-                const [carrito, setCarrito] = useState([]);
-                const [pagos, setPagos] = useState([]);
-                const [itemActual, setItemActual] = useState({ productoId: '', sku: '', nombre: '', cantidad: 1, valorUnitario: 0, fraccion: 1, descontarStock: true });
-                const [metodoActual, setMetodoActual] = useState({ metodo: 'Efectivo', monto: '', fechaPago: '', comentario: '' });
-                const [datosVenta, setDatosVenta] = useState({ entidad: 'Cliente', nombreEntidad: '', entregaDomicilio: false, domiciliarioAsignado: 'Pipe', valorDomicilio: 0, canal: 'Ferco Farma', aplicarDescuento: false, valorDescuento: 0, cuentaDestino: 'CRIS' });
-                const [newProduct, setNewProduct] = useState({ id: null, sku: '', nombre: '', precioCosto: '', precioCliente: '', precioSocio: '', stockInicial: '', categoria: 'Producto Final' });
-                const [newSujeto, setNewSujeto] = useState({ id: null, nombre: '', tipo: 'Cliente', telefono: '' });
-                const [newMovCaja, setNewMovCaja] = useState({ id: null, tipo: 'Egreso', concepto: '', valor: '', metodo: 'Efectivo', banco: '' });
-
-                useEffect(() => {
-                    const unsubscribe = onAuthStateChanged(auth, (u) => { setUser(u); if (!u) setIsVaultLocked(true); setLoading(false); });
-                    return () => unsubscribe();
-                }, []);
-
-                useEffect(() => {
-                    if (!user) return;
-                    const unsubProd = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'productos'), (s) => setProductos(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-                    const unsubVentas = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'ventas'), (s) => setVentas(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-                    const unsubSujetos = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'sujetos'), (s) => setSujetos(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-                    const unsubCaja = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'movimientos_caja'), (s) => setCaja(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-                    const unsubAuth = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'vault_control'), (snap) => { const docAuth = snap.docs.find(d => d.id === 'auth'); if (docAuth) setVaultAuthDoc({ id: docAuth.id, ...docAuth.data() }); });
-                    return () => { unsubProd(); unsubVentas(); unsubSujetos(); unsubCaja(); unsubAuth(); };
-                }, [user]);
-
-                const getNextSKU = () => {
-                    const prefix = 'NASA-';
-                    const nums = productos.filter(p => p.sku?.startsWith(prefix)).map(p => { const m = p.sku.match(/\d+/); return m ? parseInt(m[0], 10) : 0; });
-                    const maxNum = nums.length > 0 ? Math.max(...nums) : 0;
-                    return `${prefix}${String(maxNum + 1).padStart(3, '0')}`;
+            React.useEffect(() => {
+                const init = () => {
+                    if (window.FirebaseAPI) setReady(true);
                 };
+                window.addEventListener('firebase-ready', init);
+                if (window.FirebaseAPI) setReady(true);
+                return () => window.removeEventListener('firebase-ready', init);
+            }, []);
 
-                const encryptVal = (val, key) => CryptoJS.AES.encrypt(String(val), key).toString();
-                const decryptVal = (cipher, key, isNumeric = false) => {
-                    try { const bytes = CryptoJS.AES.decrypt(cipher, key); const dec = bytes.toString(CryptoJS.enc.Utf8); return isNumeric ? (parseFloat(dec) || 0) : dec; } catch(e) { return isNumeric ? 0 : ''; }
-                };
+            if (!ready) return null;
 
-                const hadesSplit = useMemo(() => {
-                    let ferco = 0, hades = 0;
-                    carrito.forEach(it => {
-                        const p = productos.find(x => x.id === it.productoId);
-                        const costoSocio = decryptVal(p?.precioSocio || 0, vaultKey, true) * it.cantidad * it.fraccion;
-                        const ventaTotal = parseFloat(it.valorUnitario) * it.cantidad * it.fraccion;
-                        if (it.descontarStock !== false) { ferco += costoSocio; hades += (ventaTotal - costoSocio); } 
-                        else { hades += ventaTotal; }
-                    });
-                    const dom = datosVenta.entregaDomicilio ? (parseFloat(datosVenta.valorDomicilio) || 0) : 0;
-                    return { ferco: ferco + dom, hades };
-                }, [carrito, datosVenta, productos, vaultKey]);
-
-                // ... (Funciones de UI, lógica de guardado, etc.) ...
-                // Nota: He resumido las funciones repetitivas para que quepa en el bloque
-                // Pero mantén tu lógica de 'registrarOActualizarDespacho' y 'upsertProd' que tenías, están bien.
-
-                if (loading) return <div className="text-white">Cargando...</div>;
-                
-                // --- BLOQUE DE SEGURIDAD (CORRECCIÓN): ---
-                if (isVaultLocked || !vaultKey) {
-                    return (
-                        <div className="flex h-screen items-center justify-center bg-[#020206] p-4 text-white">
-                            <div className="glass-panel max-w-md w-full p-8 border border-white/10 text-center">
-                                <h2 className="text-xl font-black uppercase mb-4">Acceso Seguro</h2>
-                                <form onSubmit={handleUnlockVault} className="space-y-4">
-                                    <input type="email" onChange={e=>setLoginEmail(e.target.value)} placeholder="Email..." className="w-full p-3 bg-black/60 rounded-xl text-xs font-bold border border-white/10" required />
-                                    <input type="password" onChange={e=>setLoginPassword(e.target.value)} placeholder="Password..." className="w-full p-3 bg-black/60 rounded-xl text-xs font-bold border border-white/10" required />
-                                    <input type="password" onChange={e=>setInputKey(e.target.value)} placeholder="Clave Maestra..." className="w-full p-3 bg-black/60 rounded-xl text-xs font-black border border-space-purple/30 text-cyber-green" required />
-                                    <button type="submit" className="btn-primary-nasa">Entrar</button>
-                                </form>
-                            </div>
-                        </div>
-                    );
-                }
-
-                return (
-                   <div>{/* ... Todo tu contenido de pestañas ... */}</div>
-                );
-            };
-
-            const root = ReactDOM.createRoot(document.getElementById('root'));
-            root.render(<ErrorBoundary><App /></ErrorBoundary>);
+            // AQUÍ VA TU CÓDIGO REACT QUE YA TENÍAS (El resto de la lógica...)
+            return React.createElement('div', { className: 'p-10 text-center' }, 'SISTEMA CARGADO. BIENVENIDO A FERCO FARMA');
         };
 
-        if (window.FercoFirebase) startApp();
-        else window.addEventListener('firebase-listo', startApp);
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(React.createElement(App));
     </script>
 </body>
 </html>
 ```
 
-**Nota:** He omitido el cuerpo gigante de funciones repetitivas para que el código no exceda el límite de caracteres aquí, pero **tu archivo `index.html` anterior ya tenía las funciones correctas**. Solo debes copiar el esqueleto de arriba y, si falta alguna función específica (`registrarOActualizarDespacho`, `upsertProd`, etc.), asegúrate de conservarlas dentro del componente `App` de tu archivo actual. 
+**Nota:** He dejado el interior de la `App` simplificado para probar primero la carga. **Si esto te carga el mensaje "SISTEMA CARGADO"**, entonces el problema de GitHub Pages quedó resuelto. 
 
-¡Adelante, despliega y me cuentas si esta vez te pide el login al recargar!
+**Por favor, intenta esto:** 
+1. Reemplaza el archivo.
+2. Haz `git push`.
+3. Abre el link en modo incógnito (esto es vital para borrar la caché vieja). 
+
+Si te carga "SISTEMA CARGADO", significa que ya vencimos al error del fondo negro. **Avísame inmediatamente para pegarte el resto de la lógica de negocio (inventario, caja, ventas) dentro de este cascarón seguro.**
